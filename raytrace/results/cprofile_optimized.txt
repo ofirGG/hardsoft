@@ -1,0 +1,33 @@
+         500336 function calls (493459 primitive calls) in 0.507 seconds
+
+   Ordered by: internal time
+   List reduced from 45 to 25 due to restriction <25>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+   179457    0.174    0.000    0.175    0.000 optimized.py:163(intersectionTime)
+15333/10000    0.066    0.000    0.417    0.000 optimized.py:320(rayColour)
+    10666    0.044    0.000    0.140    0.000 optimized.py:344(_lightIsVisible)
+5333/3789    0.043    0.000    0.290    0.000 optimized.py:378(colourAt)
+    26000    0.032    0.000    0.044    0.000 optimized.py:213(__init__)
+    10000    0.026    0.000    0.041    0.000 optimized.py:243(plot)
+        1    0.025    0.025    0.504    0.504 optimized.py:288(render)
+    53481    0.016    0.000    0.016    0.000 optimized.py:42(__init__)
+    25501    0.015    0.000    0.015    0.000 optimized.py:197(intersectionTime)
+     5333    0.010    0.000    0.151    0.000 optimized.py:353(visibleLights)
+    15999    0.010    0.000    0.010    0.000 optimized.py:361(addColours)
+    35333    0.009    0.000    0.009    0.000 {built-in method builtins.min}
+    30000    0.007    0.000    0.007    0.000 {built-in method builtins.max}
+    44649    0.006    0.000    0.006    0.000 {built-in method math.sqrt}
+     3857    0.006    0.000    0.007    0.000 optimized.py:421(baseColourAt)
+     5333    0.005    0.000    0.007    0.000 optimized.py:225(pointAtTime)
+        1    0.003    0.003    0.003    0.003 optimized.py:236(__init__)
+     1476    0.002    0.000    0.003    0.000 optimized.py:178(normalAt)
+     5345    0.002    0.000    0.002    0.000 optimized.py:117(__init__)
+    11571    0.002    0.000    0.002    0.000 {built-in method builtins.abs}
+    10246    0.001    0.000    0.001    0.000 {method 'append' of 'list' objects}
+     3857    0.001    0.000    0.001    0.000 optimized.py:206(normalAt)
+     1476    0.000    0.000    0.000    0.000 optimized.py:375(baseColourAt)
+        1    0.000    0.000    0.507    0.507 optimized.py:432(bench_raytrace)
+        8    0.000    0.000    0.000    0.000 optimized.py:369(__init__)
+
+

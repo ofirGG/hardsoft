@@ -1,0 +1,13 @@
+         8 function calls in 0.314 seconds
+
+   Ordered by: internal time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.313    0.313    0.313    0.313 original.py:78(advance)
+        2    0.000    0.000    0.000    0.000 original.py:100(report_energy)
+        1    0.000    0.000    0.314    0.314 original.py:123(bench_nbody)
+        1    0.000    0.000    0.000    0.000 original.py:112(offset_momentum)
+        2    0.000    0.000    0.000    0.000 {built-in method time.perf_counter}
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+
+

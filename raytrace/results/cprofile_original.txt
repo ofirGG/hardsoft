@@ -1,0 +1,33 @@
+         3086309 function calls (3079432 primitive calls) in 1.930 seconds
+
+   Ordered by: internal time
+   List reduced from 52 to 25 due to restriction <25>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+   509871    0.325    0.000    0.392    0.000 original.py:51(dot)
+   277865    0.280    0.000    0.417    0.000 original.py:113(__sub__)
+   179457    0.228    0.000    0.770    0.000 original.py:142(intersectionTime)
+   452943    0.162    0.000    0.162    0.000 original.py:24(__init__)
+    10666    0.121    0.000    0.895    0.000 original.py:283(_lightIsVisible)
+   149743    0.097    0.000    0.151    0.000 original.py:48(scale)
+   109887    0.084    0.000    0.368    0.000 original.py:61(normalized)
+   109887    0.073    0.000    0.175    0.000 original.py:35(magnitude)
+   520539    0.068    0.000    0.068    0.000 original.py:76(mustBeVector)
+    15265    0.065    0.000    0.544    0.000 original.py:271(<listcomp>)
+    98172    0.058    0.000    0.387    0.000 original.py:177(__init__)
+5333/3789    0.051    0.000    1.326    0.000 original.py:315(colourAt)
+        1    0.045    0.045    1.927    1.927 original.py:245(render)
+15333/10000    0.040    0.000    1.743    0.000 original.py:266(rayColour)
+   277865    0.040    0.000    0.040    0.000 original.py:122(isPoint)
+    10000    0.028    0.000    0.044    0.000 original.py:200(plot)
+    20000    0.021    0.000    0.031    0.000 original.py:38(__add__)
+    15265    0.019    0.000    0.019    0.000 original.py:213(firstIntersection)
+    25501    0.017    0.000    0.036    0.000 original.py:164(intersectionTime)
+   116821    0.015    0.000    0.015    0.000 {built-in method math.sqrt}
+     3857    0.012    0.000    0.024    0.000 original.py:346(baseColourAt)
+    15999    0.012    0.000    0.012    0.000 original.py:298(addColours)
+     5333    0.011    0.000    0.908    0.000 original.py:290(visibleLights)
+    35333    0.011    0.000    0.011    0.000 {built-in method builtins.min}
+     5333    0.009    0.000    0.033    0.000 original.py:82(reflectThrough)
+
+

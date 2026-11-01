@@ -21,7 +21,7 @@ FLAMEGRAPH="$REPO_ROOT/tools/FlameGraph"
 PY=python3          # release build: used for all timing
 PY_DBG=python3-dbg  # debug build: used for profiling (gives CPython symbols)
 
-mkdir -p "$RES"
+mkdir -p "$RES" "$SRC"
 
 log() { echo -e "\n[$BENCH] $*"; }
 

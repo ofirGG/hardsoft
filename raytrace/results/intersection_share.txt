@@ -1,0 +1,4 @@
+queries per frame        : 25931 (15265 nearest-hit, 10666 any-hit)
+render time (best of 5)  : 257.3 ms
+sphere search (offload)  : 137.2 ms = 53.3 % of render, 5.29 us/query
+plane test (stays in SW) : 15.2 ms = 5.9 % of render

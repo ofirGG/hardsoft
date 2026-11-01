@@ -1,0 +1,4 @@
+458 queries (400 nearest-hit, 58 any-hit), 30 hits
+avg cycles/query: nearest-hit 78, any-hit 98
+max relative error of t vs Python original = 2.416945e-16
+PASS

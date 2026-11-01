@@ -25,3 +25,4 @@ tools/FlameGraph/
 *.vcd
 *.vvp
 *_vectors.hex
+*.count

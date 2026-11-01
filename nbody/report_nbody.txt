@@ -1,0 +1,50 @@
+==============================================================================
+ HWSW Project - Benchmark Report: nbody
+==============================================================================
+
+1. OVERVIEW
+------------------------------------------------------------------------------
+TODO: What the benchmark simulates and why it exists.
+TODO: Libraries used (stdlib / third-party) and how they are used.
+TODO: Data structures (lists, tuples, dicts, classes...) and the core algorithm,
+      with time complexity per iteration.
+
+2. INITIAL ANALYSIS
+------------------------------------------------------------------------------
+2.1 Baseline timing (pyperformance)
+    TODO: paste mean +- std from results/pyperformance_baseline.txt
+          Note the environment: QEMU VM, CPU, Python version.
+2.2 perf profile
+    TODO: top functions by Self / Children % from results/perf_report_original.txt
+2.3 Flame graph
+    See results/flamegraph_original.svg
+    TODO: describe the widest towers and what they correspond to in the code.
+2.4 Bottlenecks identified
+    TODO: list each bottleneck, the evidence (percent of samples), and why it is slow
+          (e.g. attribute lookups, boxing of floats, temporary objects).
+
+3. OPTIMIZATIONS
+------------------------------------------------------------------------------
+For each change in src/optimized.py:
+    TODO: What was changed / which bottleneck it addresses / why it is faster.
+    TODO: How correctness was verified (src/check_correctness.py).
+
+4. PERFORMANCE COMPARISON
+------------------------------------------------------------------------------
+    TODO: paste results/comparison.txt (pyperf compare_to table).
+    TODO: speedup % per optimization if measured separately; target >= 7%.
+    TODO: compare results/flamegraph_optimized.svg against the original.
+
+5. HARDWARE ACCELERATION PROPOSAL
+------------------------------------------------------------------------------
+5.1 Target component and justification (Amdahl estimate from profile data)
+5.2 Inputs / outputs (widths, interface, operating frequency)
+5.3 Architecture (datapath + control FSM) - RTL in hw/rtl/, testbench in hw/tb/
+5.4 Hardware/software interface (registers / MMIO / DMA / driver / API changes)
+5.5 Block diagram - hw/docs/
+5.6 Performance / area / power / frequency trade-offs
+5.7 Assumptions
+
+6. CONCLUSION
+------------------------------------------------------------------------------
+    TODO: summarize SW speedup achieved and expected HW speedup.

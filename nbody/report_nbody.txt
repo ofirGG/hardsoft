@@ -2,49 +2,294 @@
  HWSW Project - Benchmark Report: nbody
 ==============================================================================
 
+Environment
+  Host server : naranja7 (Intel Xeon E5-2630 v3 @ 2.40 GHz)
+  VM          : QEMU/KVM, Ubuntu 22.04 (kernel 5.15.0-1080-kvm), 4 vCPU, 8 GB
+  Python      : CPython 3.10.12 (python3 for timing, python3-dbg for perf)
+  Tools       : pyperformance 1.14.0, pyperf, perf 5.15, FlameGraph,
+                cProfile, Icarus Verilog
+  Reproduce   : ./common/setup_env.sh && ./nbody/script_nbody.sh
+                ./nbody/hw/run_sim.sh   (hardware simulation)
+
+
 1. OVERVIEW
 ------------------------------------------------------------------------------
-TODO: What the benchmark simulates and why it exists.
-TODO: Libraries used (stdlib / third-party) and how they are used.
-TODO: Data structures (lists, tuples, dicts, classes...) and the core algorithm,
-      with time complexity per iteration.
+What it does
+  The N-body benchmark from the Computer Language Benchmarks Game simulates
+  the Jovian planets (Sun, Jupiter, Saturn, Uranus, Neptune) under Newtonian
+  gravity with a symplectic Euler integrator. One benchmark iteration is:
+      report_energy(); advance(0.01, 20000); report_energy()
+  It measures raw floating-point arithmetic, list indexing and tuple
+  unpacking in the interpreter - no I/O, no allocation-heavy containers.
+
+Libraries
+  Only pyperf (timing harness). The physics is pure Python; no math module,
+  no numpy. The power r^-1.5 is computed with the float ** operator, which
+  CPython implements with the C library pow() (__ieee754_pow_fma in glibc).
+
+Data structures
+  BODIES : dict name -> ([x, y, z], [vx, vy, vz], mass)   - 5 bodies
+  SYSTEM : list of those tuples (the lists inside are mutated in place)
+  PAIRS  : all 10 (body_i, body_j) pairs, built once by a pure-Python
+           combinations() (the benchmark avoids itertools on purpose).
+  Positions and velocities are Python lists of 3 boxed floats.
+
+Algorithm (advance, per time step)
+  for each of the 10 pairs:
+      d = r_i - r_j ;  mag = dt * |d|^-3
+      v_i -= d * m_j * mag ;  v_j += d * m_i * mag
+  for each of the 5 bodies:  r += dt * v
+  Cost: O(N^2) pair interactions per step; with N = 5 that is 10 pairs of
+  12 multiplications, 11 additions/subtractions and 1 pow each, plus 5 x 6
+  operations for the position update: ~ 270 floating-point operations per
+  step, 5.4 million per benchmark iteration.
+
+Why it is slow in CPython
+  Every float operation allocates a new 24-byte float object and frees the
+  old one; every v1[0] -= ... is a list load + float op + list store through
+  the generic subscript protocol; every pair re-unpacks two nested tuples and
+  two 3-element lists. The interpreter executes 113 bytecodes per pair
+  (measured with dis) for 24 useful floating-point operations.
+
 
 2. INITIAL ANALYSIS
 ------------------------------------------------------------------------------
-2.1 Baseline timing (pyperformance)
-    TODO: paste mean +- std from results/pyperformance_baseline.txt
-          Note the environment: QEMU VM, CPU, Python version.
-2.2 perf profile
-    TODO: top functions by Self / Children % from results/perf_report_original.txt
-2.3 Flame graph
-    See results/flamegraph_original.svg
-    TODO: describe the widest towers and what they correspond to in the code.
-2.4 Bottlenecks identified
-    TODO: list each bottleneck, the evidence (percent of samples), and why it is slow
-          (e.g. attribute lookups, boxing of floats, temporary objects).
+2.1 Baseline timing (pyperformance run --bench nbody, release python3)
+      nbody: Mean +- std dev: 232 ms +- 4 ms        (results/pyperformance_baseline.txt)
+    i.e. 11.6 us per advance() time step, 1.16 us per pair interaction.
 
-3. OPTIMIZATIONS
+2.2 Python-level profile (cProfile, one benchmark iteration; results/cprofile_original.txt)
+      advance()        0.313 s  of 0.314 s total  (99.7 %)
+      report_energy()  < 0.001 s
+    The whole benchmark is the advance() loop body - a single hot spot.
+
+2.3 perf profile (perf record -e cpu-clock -F 999 -g, python3-dbg;
+    results/perf_report_original.txt, 18K samples)
+    Note: the hardware "cycles" event takes no sampling interrupts inside
+    this QEMU guest (perf recorded 0 samples), so the cpu-clock software
+    timer is used instead - see common/pipeline.sh.
+
+      Self %   Symbol                       Meaning
+      38.87    _PyEval_EvalFrameDefault     bytecode dispatch loop
+       4.84    binary_op1                   generic number protocol dispatch
+       3.74    PyFloat_FromDouble           allocate a float for every result
+       3.26    float_dealloc                free the previous float
+       3.10    float_mul                    the actual multiplications
+       2.40    list_ass_item                \
+       1.56    list_ass_subscript            | v[k] -= ... list stores
+       1.85    PyNumber_AsSsize_t            | (index conversion)
+       1.42    _PyNumber_Index              /
+       1.88    float_add / 1.48 float_sub   the actual additions
+       1.52    __ieee754_pow_fma            r2 ** -1.5
+       1.36    _Py_NewReference             object bookkeeping
+
+    Grouped:
+      interpreter dispatch           ~ 39 %
+      float boxing (alloc/free/ref)  ~ 8.4 %
+      list-element stores + index    ~ 7.2 %
+      useful FP arithmetic           ~ 8 % (mul/add/sub/pow)
+
+2.4 Flame graph
+    results/flamegraph_original.svg. One tower under the worker process:
+    _PyEval_EvalFrameDefault (advance) with short side frames for the
+    float/list protocol functions listed above. There is no deep call stack -
+    the time is spread over the per-bytecode overhead of one loop body.
+
+2.5 Bottlenecks identified
+    B1. Element-wise list access to positions/velocities: 6 read-modify-write
+        list stores per pair plus nested tuple/list unpacking of both bodies
+        (~ 7 % in list functions + their bytecodes in the eval loop).
+    B2. Interpreter overhead of the inner pair loop (FOR_ITER, UNPACK_SEQUENCE,
+        loop control) repeated 10 x 20000 times.
+    B3. Float boxing: every intermediate value is a heap object (~ 8 %).
+        This is inherent to CPython floats; it can be reduced only by
+        executing fewer bytecodes or by leaving the interpreter.
+    B4. The arithmetic itself, including one pow() per pair - small in
+        software but the dominant cost once the interpreter is gone, which
+        is what the hardware accelerator targets.
+
+
+3. OPTIMIZATIONS  (src/optimized.py)
 ------------------------------------------------------------------------------
-For each change in src/optimized.py:
-    TODO: What was changed / which bottleneck it addresses / why it is faster.
-    TODO: How correctness was verified (src/check_correctness.py).
+O1. Scalar replacement ("register promotion") - targets B1
+    On entry advance() copies every coordinate, velocity and mass into a
+    local variable (x0, y0, ..., vz4, m0..m4) and writes them back to the
+    shared lists once on exit. Inside the loop all accesses become
+    LOAD_FAST/STORE_FAST instead of BINARY_SUBSCR/STORE_SUBSCR, and the
+    per-pair tuple/list unpacking disappears.
+
+O2. Full unrolling of the pair loop - targets B2
+    The number of bodies is known when the module loads, so
+    _generate_advance() emits straight-line code for all 10 pairs (and the 5
+    position updates) and compiles it once with exec(). This is the same
+    transformation a compiler does for a loop with a constant trip count.
+
+    Effect on the instruction stream (dis): 113 bytecodes per pair in the
+    original -> ~ 75 per pair in the unrolled code (-34 %), with every
+    remaining one a cheap LOAD_FAST/STORE_FAST or a float operation.
+
+O3. Bit-exact semantics
+    Each pair's arithmetic is emitted exactly as written in the original
+    (same expressions, same order, pairs in combinations() order), so the
+    results are bit-identical. src/check_correctness.py runs both versions
+    for 5000 steps and compares every energy, position and velocity with ==:
+      OK: energies and all body positions/velocities are bit-identical
+    Changes considered and rejected:
+      * replacing ** -1.5 with 1/(d2*sqrt(d2)) - faster, but not bit-exact;
+      * numpy vectorization - for 5 bodies the per-call overhead of numpy is
+        larger than the work, and the results would not be bit-identical.
+
 
 4. PERFORMANCE COMPARISON
 ------------------------------------------------------------------------------
-    TODO: paste results/comparison.txt (pyperf compare_to table).
-    TODO: speedup % per optimization if measured separately; target >= 7%.
-    TODO: compare results/flamegraph_optimized.svg against the original.
+pyperf, release python3, same runner for both files (results/comparison.txt):
 
-5. HARDWARE ACCELERATION PROPOSAL
+    +-----------+--------+----------------------+
+    | Benchmark | before | after                |
+    +===========+========+======================+
+    | nbody     | 232 ms | 144 ms: 1.61x faster |
+    +-----------+--------+----------------------+
+    before 232 ms +- 5 ms  ->  after 144 ms +- 3 ms
+
+  Execution time reduced by 38 % (requirement: >= 7 %). The difference is
+  ~ 18 standard deviations, far outside measurement noise.
+
+  Profile after optimization (results/perf_report_optimized.txt,
+  results/flamegraph_optimized.svg, 12K samples vs 18K for the same work):
+    * list_ass_item, list_ass_subscript, PyNumber_AsSsize_t, _PyNumber_Index
+      disappeared from the profile (B1 removed);
+    * the remaining time is float boxing (PyFloat_FromDouble 5.0 %,
+      float_dealloc 4.0 %), dispatch, and the arithmetic itself
+      (float_mul 4.2 %, pow 2.4 %) - i.e. what is left is the real FP work
+      plus the cost of doing it one boxed operation at a time. This is the
+      part a hardware datapath removes.
+
+
+5. HARDWARE ACCELERATION PROPOSAL  -  nbody_accel
 ------------------------------------------------------------------------------
-5.1 Target component and justification (Amdahl estimate from profile data)
-5.2 Inputs / outputs (widths, interface, operating frequency)
-5.3 Architecture (datapath + control FSM) - RTL in hw/rtl/, testbench in hw/tb/
-5.4 Hardware/software interface (registers / MMIO / DMA / driver / API changes)
-5.5 Block diagram - hw/docs/
-5.6 Performance / area / power / frequency trade-offs
-5.7 Assumptions
+5.1 Target component and justification
+    advance() is 99.7 % of the run time, its work is a fixed, regular
+    sequence of double-precision add/mul/rsqrt with no data-dependent control
+    flow, and its state (5 bodies x 7 doubles = 280 bytes) fits in on-chip
+    registers. Offloading the *whole* time-step loop means the host transfers
+    the state once per benchmark iteration instead of once per step, so the
+    host<->device interface cost is amortized over 20000 steps.
+    Amdahl: f = 0.997 of the time is accelerable.
+
+5.2 Inputs / outputs and interface
+    Bus           : 64-bit memory-mapped slave (AXI4-Lite-style: wr_en, rd_en,
+                    12-bit word address, 64-bit wdata/rdata), one level IRQ.
+    Clock         : single clock, target 100 MHz on an FPGA (single-cycle
+                    binary64 add/mul); ~400 MHz in a 28 nm ASIC.
+    Data format   : IEEE-754 binary64 for all physical values.
+    Register map (word addresses):
+      0x000 CTRL     W   bit0 start
+      0x001 STATUS   R   bit0 busy, bit1 done
+      0x002 NBODIES  RW  2 .. 8
+      0x003 NSTEPS   RW  number of time steps (64-bit)
+      0x004 DT       RW  time step (binary64)
+      0x005 CYCLES   R   cycles taken by the last run (performance counter)
+      0x100+8*i+k    RW  body i: k=0..2 x,y,z  k=3..5 vx,vy,vz  k=6 mass
+    Output: the updated bodies are read back from the same body registers;
+    irq is high while done = 1.
+
+5.3 Architecture (rtl/nbody_accel.v, ../common/rtl/*.v)
+    Datapath
+      * fp_add  - binary64 adder/subtractor, single cycle, round-to-nearest-
+                  even (bit-exact vs IEEE double, see common/tb/tb_fp.v)
+      * fp_mul  - binary64 multiplier, single cycle, round-to-nearest-even
+      * fp_rsqrt- 1/sqrt(x): bit-trick seed (0x5FE6EB50C7B537A9 - x>>1) and
+                  4 Newton-Raphson steps y <- y*(1.5 - 0.5*x*y*y) on its own
+                  mul/add; 17 cycles; max relative error 3.2e-16.
+      * body register file 8 x 7 x 64 bit, temp registers dx dy dz t0 t1 r2
+        inv mag b1m b2m, operand multiplexers selected by the micro-step.
+    Control FSM
+      IDLE -> PAIR(i,j) uop 0..17 (with a hand-off to RSQ while fp_rsqrt
+      runs) -> next pair ... -> POS(i) uop 0..3 for every body -> next step
+      ... -> done/IRQ. Each micro-step issues at most one add and one mul:
+        uop 0-4   dx, dy, dz, r2 = dx*dx + dy*dy + dz*dz (add/mul overlapped)
+        uop 5     start rsqrt(r2)            (17 cycles)
+        uop 6-10  inv^3, mag = dt*inv^3, b1m = m_i*mag, b2m = m_j*mag
+        uop 11-17 v_i -= d*b2m, v_j += d*b1m (mul and add overlapped)
+      Position update: 4 cycles per body (r += dt*v, overlapped).
+    Cycle count: 36 cycles per pair (17 of them in rsqrt) x 10 pairs
+    + 4 x 5 bodies + control = 390 cycles per time step (measured).
+
+    Block diagram: hw/docs/nbody_accel_block_diagram.svg
+
+          +--------- Host ---------+         +--------------------- nbody_accel ---------------------+
+          | Python advance(dt,n)   |  MMIO   | Control regs  ---+                                    |
+          |  -> driver: write      |<=======>| Body RF 8x7x64 --+--> operand --> fp_add  --+         |
+          |     bodies, n, dt,     | 64-bit  |                  |    muxes   --> fp_mul  --+--> temp |
+          |     start, wait IRQ,   |   IRQ   | Control FSM -----+    (uop)   --> fp_rsqrt--+    regs |
+          |     read bodies back   |<--------|  (phase,uop,i,j,step)       ^                  |      |
+          +------------------------+         |                             +---- feedback ----+      |
+                                             |      write-back v_i, v_j, r_i  <--------------+      |
+                                             +-------------------------------------------------------+
+
+5.4 Hardware/software interface
+    Software change: advance(dt, n) is replaced by a call into a small C
+    extension (or ctypes over a UIO/VFIO-mapped BAR, or /dev/mem on an SoC
+    such as Zynq). The extension:
+      1. writes the 35 body doubles, NBODIES, NSTEPS = n, DT   (38 writes)
+      2. writes CTRL.start and sleeps on the IRQ (or polls STATUS)
+      3. reads the 35 doubles back into the Python lists       (35 reads)
+    No DMA is needed - the state is 280 bytes. report_energy() and
+    offset_momentum() stay in Python (2 calls per iteration).
+    Driver cost per call: ~ 73 MMIO accesses ~ 0.1 ms over PCIe (uncached
+    reads ~ 1 us each), negligible against 20000 steps.
+
+5.5 Verification (hw/run_sim.sh, hw/sim_result.txt)
+    tb/gen_vectors.py runs the ORIGINAL Python benchmark (offset_momentum +
+    1000 x advance(0.01, 1)) and dumps the initial and final state;
+    tb/tb_nbody_accel.v plays the driver over the MMIO bus and compares:
+      steps = 1000, cycles = 390000, cycles/step = 390
+      max relative error vs Python original = 3.730684e-15
+      PASS
+    (Not bit-exact only because hardware computes |d|^-3 as rsqrt^3 instead
+    of glibc pow(); the error stays at the 1e-15 level over 1000 steps.)
+
+5.6 Expected performance (assumptions stated)
+                          time/step   benchmark iteration (20000 steps)
+      Python original      11.6 us     232 ms
+      Python optimized      7.2 us     144 ms
+      nbody_accel @100 MHz  3.9 us      78 ms  + ~0.1 ms MMIO  ->  3.0x vs original
+      nbody_accel @400 MHz  0.98 us     20 ms                  -> 11.9x vs original
+    Assumptions: FPGA clock 100 MHz for single-cycle binary64 units, ASIC
+    ~400 MHz in 28 nm; MMIO latency ~1 us per uncached read over PCIe.
+    The iterative design is deliberately area-minimal. Since rsqrt is 47 %
+    of the cycles, the next step is a pipelined datapath: one fully pipelined
+    rsqrt/mul/add set would start one pair per cycle (10 pairs + 5 updates
+    + ~60 cycles pipeline drain per step), ~75 cycles/step -> ~0.19 us/step
+    @400 MHz, ~60x vs original - at roughly 10x the FP area.
+
+5.7 Performance / area / power / frequency trade-offs
+    Area (estimate): 2 x 53x53-bit multipliers (main + rsqrt), 2 x 64-bit
+      FP adders, ~ 4.3 kbit of registers. FPGA: ~ 20-30 DSP48 slices and
+      ~ 4-6 k LUTs. ASIC 28 nm: ~ 0.05-0.08 mm^2.
+    Frequency: single-cycle binary64 units limit the clock (~ 100 MHz FPGA).
+      Pipelining each unit to 3-4 stages roughly triples fmax but needs the
+      FSM to schedule around the latency (or a pair pipeline as in 5.6).
+    Power (estimate): the accelerator at 100 MHz ~ 0.3-0.5 W on an FPGA vs a
+      ~ 10 W server core running the interpreter. Energy per time step:
+      ~ 116 uJ (CPU, 11.6 us x 10 W) vs ~ 2 uJ (accelerator) - ~ 50x better.
+    Precision: binary64 everywhere, so results track the software to 1e-15.
+      A binary32 version would halve area and power but drifts visibly over
+      20000 steps - not acceptable for a physics integrator.
+    Generality: the datapath (add, mul, rsqrt, register file, micro-sequenced
+      FSM) is not specific to 5 bodies; NBODIES up to 8 is supported, and a
+      larger body memory scales it to any N (O(N^2) pairs per step).
+
 
 6. CONCLUSION
 ------------------------------------------------------------------------------
-    TODO: summarize SW speedup achieved and expected HW speedup.
+  * Software: scalar replacement + full unrolling of the pair loop make
+    nbody 1.61x faster (232 ms -> 144 ms, -38 %), with bit-identical results.
+    The profile confirms the list-store machinery is gone; what remains is
+    boxed floating-point arithmetic, which the interpreter cannot avoid.
+  * Hardware: nbody_accel moves the entire time-step loop into a binary64
+    datapath (1 adder, 1 multiplier, 1 rsqrt unit, on-chip body registers).
+    It is verified against the original Python to 3.7e-15 over 1000 steps,
+    takes 390 cycles/step, and is estimated at 3x the original software at
+    100 MHz (12x at 400 MHz), with a clear path to ~60x by pipelining, at
+    ~50x lower energy per step.

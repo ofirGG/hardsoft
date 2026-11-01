@@ -2,49 +2,320 @@
  HWSW Project - Benchmark Report: raytrace
 ==============================================================================
 
+Environment
+  Host server : naranja7 (Intel Xeon E5-2630 v3 @ 2.40 GHz)
+  VM          : QEMU/KVM, Ubuntu 22.04 (kernel 5.15.0-1080-kvm), 4 vCPU, 8 GB
+  Python      : CPython 3.10.12 (python3 for timing, python3-dbg for perf)
+  Tools       : pyperformance 1.14.0, pyperf, perf 5.15, FlameGraph,
+                cProfile, Icarus Verilog
+  Reproduce   : ./common/setup_env.sh && ./raytrace/script_raytrace.sh
+                ./raytrace/hw/run_sim.sh   (hardware simulation)
+
+
 1. OVERVIEW
 ------------------------------------------------------------------------------
-TODO: What the benchmark simulates and why it exists.
-TODO: Libraries used (stdlib / third-party) and how they are used.
-TODO: Data structures (lists, tuples, dicts, classes...) and the core algorithm,
-      with time complexity per iteration.
+What it does
+  A small recursive ray tracer (Callum and Tony Garnock-Jones, 2008). Each
+  benchmark iteration builds a scene - 7 spheres, a checkerboard ground
+  plane, 2 point lights - and renders a 100 x 100 image into a byte array.
+  It measures object-oriented Python: many tiny classes, method calls,
+  attribute access and short-lived objects.
+
+Libraries
+  math (sqrt, tan, pi), array (the RGB canvas), pyperf (timing harness).
+  No third-party numeric code: all vector math is done by Python classes.
+
+Data structures
+  Vector, Point  : classes with x, y, z attributes (per-instance __dict__);
+                   operator overloading (__add__, __sub__) and methods
+                   (dot, cross, scale, normalized, reflectThrough) that each
+                   allocate a new object. Point/Vector "type checks" are
+                   method calls (isPoint(), mustBeVector(), mustBePoint()).
+  Ray            : origin Point + unit Vector (normalized in __init__).
+  Sphere, Halfspace : scene objects with intersectionTime(ray) / normalAt(p).
+  SimpleSurface, CheckerboardSurface : shading (Lambert, specular, ambient).
+  Scene.objects  : list of (object, surface) tuples; Canvas.bytes: array('B').
+
+Algorithm
+  For each pixel a primary ray is built from the camera basis. rayColour()
+  computes intersectionTime() against every object, picks the nearest hit
+  with t > -EPSILON, and shades it: one recursive reflected ray (depth <= 3),
+  plus, for each of the 2 lights, a shadow ray tested against every object
+  (_lightIsVisible). Ray-sphere test: cp = c - p, v = cp.d,
+  disc = r^2 - (cp.cp - v^2), t = v - sqrt(disc) if disc >= 0.
+  Per frame (measured): 25,931 scene queries - 15,265 nearest-hit
+  (10,000 primary + 5,265 reflected) and 10,666 shadow queries - giving
+  179,457 sphere tests and 25,501 plane tests.
+
 
 2. INITIAL ANALYSIS
 ------------------------------------------------------------------------------
-2.1 Baseline timing (pyperformance)
-    TODO: paste mean +- std from results/pyperformance_baseline.txt
-          Note the environment: QEMU VM, CPU, Python version.
-2.2 perf profile
-    TODO: top functions by Self / Children % from results/perf_report_original.txt
-2.3 Flame graph
-    See results/flamegraph_original.svg
-    TODO: describe the widest towers and what they correspond to in the code.
-2.4 Bottlenecks identified
-    TODO: list each bottleneck, the evidence (percent of samples), and why it is slow
-          (e.g. attribute lookups, boxing of floats, temporary objects).
+2.1 Baseline timing (pyperformance run --bench raytrace, release python3)
+      raytrace: Mean +- std dev: 797 ms +- 4 ms    (results/pyperformance_baseline.txt)
 
-3. OPTIMIZATIONS
+2.2 Python-level profile (cProfile, one frame; results/cprofile_original.txt)
+    3,086,309 function calls per frame.
+        ncalls  tottime  cumtime  function
+        509871   0.325    0.392   Vector.dot
+        277865   0.280    0.417   Point.__sub__
+        179457   0.228    0.770   Sphere.intersectionTime
+        452943   0.162    0.162   Vector.__init__
+         10666   0.121    0.895   Scene._lightIsVisible
+        149743   0.097    0.151   Vector.scale
+        109887   0.084    0.368   Vector.normalized
+        109887   0.073    0.175   Vector.magnitude
+        520539   0.068    0.068   Vector.mustBeVector
+    * Sphere.intersectionTime with its callees (Point.__sub__, Vector.dot,
+      mustBeVector, Vector.__init__) is 40 % of the frame (0.770 / 1.93 s).
+    * _lightIsVisible is 46 % cumulative: it calls Ray(p, l - p) INSIDE the
+      loop over objects, i.e. the identical shadow ray (with a sqrt to
+      normalize it) is rebuilt 8 times.
+    * 452,943 Vector objects are created per frame, mostly as temporaries.
+    * 520,539 calls to mustBeVector() do nothing but return self.
+
+2.3 perf profile (perf record -e cpu-clock -F 999 -g, python3-dbg;
+    results/perf_report_original.txt, 75K samples)
+    Note: the hardware "cycles" event takes no sampling interrupts inside
+    this QEMU guest, so the cpu-clock software timer is used.
+      Self %   Symbol                       Meaning
+      27.79    _PyEval_EvalFrameDefault     bytecode dispatch
+       3.47    call_function                \
+       3.07    frame_dealloc                 | Python function call
+       2.76    _PyEval_MakeFrameVector       | machinery (~ 10.5 %)
+       1.18    _PyFrame_New_NoTrack         /
+       2.61    lookdict_unicode_nodummy     \
+       2.07    _PyDict_GetItemHint           | attribute / method lookup
+       1.98    _PyType_Lookup                | through instance and type
+       1.73    _PyObject_GetMethod           | dictionaries (~ 10 %)
+       1.63    lookdict_split               /
+       0.97 + 0.92 + 0.94  PyFloat_FromDouble, float_dealloc, _Py_NewReference
+       0.73 + 0.36 + 0.30  subtype_dealloc, PyType_GenericAlloc, slot_tp_init
+                                            (creating/destroying Vector objects)
+    The actual floating-point math does not even appear in the top list:
+    the cost is calls, lookups and allocation around it.
+
+2.4 Flame graph
+    results/flamegraph_original.svg: a wide plateau of short towers - each
+    a Python-level method call (frame creation, attribute lookup, object
+    allocation) - rather than one deep hot path. This is the signature of
+    "death by a thousand small calls".
+
+2.5 Bottlenecks identified
+    B1. Method-call overhead of tiny vector methods (dot, __sub__, scale,
+        mustBeVector, isPoint) - ~ 10 % in call machinery alone.
+    B2. Attribute lookups through per-instance __dict__ (~ 10 %).
+    B3. Temporary Vector/Point objects (452K per frame).
+    B4. Redundant work: the shadow Ray is rebuilt for every object, and
+        Checkerboard.baseColourAt computes a scaled vector it never uses.
+    B5. The ray-vs-scene search itself (intersectionTime over all objects for
+        every ray) - the core computational kernel, targeted by hardware.
+
+
+3. OPTIMIZATIONS  (src/optimized.py)
 ------------------------------------------------------------------------------
-For each change in src/optimized.py:
-    TODO: What was changed / which bottleneck it addresses / why it is faster.
-    TODO: How correctness was verified (src/check_correctness.py).
+O1. __slots__ on Vector, Point, Ray, Sphere, Halfspace  (B2, B3)
+    Attributes are stored in fixed slots accessed through a descriptor
+    instead of a per-object dict: faster loads/stores, smaller objects,
+    cheaper allocation.
+
+O2. Inlined vector math on the hot paths  (B1, B3)
+    Sphere.intersectionTime, Sphere.normalAt, Halfspace.intersectionTime,
+    Ray.__init__ (normalization), Ray.pointAtTime, the primary ray setup in
+    render(), the reflection in colourAt() and the Lambert term are written
+    on scalar components. No temporary Vector objects and no
+    isPoint()/mustBeVector() calls remain on those paths. Every expression
+    keeps the original operand order, e.g. dot = (x*x') + (y*y') + (z*z'),
+    so all floating-point results are unchanged.
+
+O3. Loop-invariant hoisting in _lightIsVisible  (B4)
+    The shadow ray depends only on the light and the hit point, so it is
+    built once per light instead of once per (light, object): 8x fewer
+    Ray constructions (and sqrt calls) for shadow tests.
+
+O4. Fused nearest-hit search in rayColour  (B1, B3)
+    The list of (object, t, surface) tuples plus firstIntersection() pass is
+    replaced by one loop that tracks the nearest hit, using exactly the same
+    acceptance and tie-breaking rule (t > -EPSILON, strictly smaller wins).
+
+O5. Small items: radius^2 precomputed per sphere; math.sqrt bound to a
+    global; bound methods (rayColour, canvas.plot) hoisted out of the pixel
+    loop; the unused scaled vector in Checkerboard.baseColourAt removed.
+
+Correctness: src/check_correctness.py renders the benchmark scene with both
+versions and compares the raw canvas:
+    OK: 100x100 image is byte-identical (30000 bytes)
+
 
 4. PERFORMANCE COMPARISON
 ------------------------------------------------------------------------------
-    TODO: paste results/comparison.txt (pyperf compare_to table).
-    TODO: speedup % per optimization if measured separately; target >= 7%.
-    TODO: compare results/flamegraph_optimized.svg against the original.
+pyperf, release python3, same runner for both files (results/comparison.txt):
 
-5. HARDWARE ACCELERATION PROPOSAL
+    +-----------+--------+----------------------+
+    | Benchmark | before | after                |
+    +===========+========+======================+
+    | raytrace  | 800 ms | 257 ms: 3.11x faster |
+    +-----------+--------+----------------------+
+    before 800 ms +- 5 ms  ->  after 257 ms +- 1 ms
+
+  Execution time reduced by 68 % (requirement: >= 7 %).
+
+  After optimization (results/cprofile_optimized.txt,
+  results/perf_report_optimized.txt, results/flamegraph_optimized.svg):
+    * function calls per frame: 3,086,309 -> 500,336 (-84 %)
+    * perf samples for the same work: 75K -> 22K
+    * call machinery 10.5 % -> 6.2 %, dict-based attribute lookup
+      ~ 10 % -> ~ 3 % (_PyDict_GetItemHint gone thanks to __slots__)
+    * Sphere.intersectionTime is now the top function (0.174 s self of
+      0.507 s under cProfile) - the remaining time is concentrated in the
+      ray-vs-scene search kernel.
+
+  Share of the optimized render spent in the sphere search
+  (src/measure_intersection_share.py -> results/intersection_share.txt):
+      queries per frame        : 25931 (15265 nearest-hit, 10666 any-hit)
+      render time (best of 5)  : 257.3 ms
+      sphere search (offload)  : 137.2 ms = 53.3 % of render, 5.29 us/query
+      plane test (stays in SW) : 15.2 ms = 5.9 % of render
+
+
+5. HARDWARE ACCELERATION PROPOSAL  -  ray_sphere_accel
 ------------------------------------------------------------------------------
-5.1 Target component and justification (Amdahl estimate from profile data)
-5.2 Inputs / outputs (widths, interface, operating frequency)
-5.3 Architecture (datapath + control FSM) - RTL in hw/rtl/, testbench in hw/tb/
-5.4 Hardware/software interface (registers / MMIO / DMA / driver / API changes)
-5.5 Block diagram - hw/docs/
-5.6 Performance / area / power / frequency trade-offs
-5.7 Assumptions
+5.1 Target component and justification
+    After software optimization the sphere search is 53.3 % of the frame
+    (Amdahl f = 0.533 -> at most 2.14x more from accelerating it). It is a
+    pure, fixed sequence of binary64 operations (8 mul, 10 add/sub, 1 sqrt
+    and 2 compares per sphere) over a small table (7 spheres) that
+    does not change during a frame, and it is called 25,931 times per frame
+    with the same table - ideal for a unit that keeps the table on chip and
+    receives only the ray. Ray-object intersection is also exactly what
+    commercial GPUs accelerate with dedicated RT cores, so the unit is not
+    specific to this benchmark.
+
+5.2 Inputs / outputs and interface
+    Bus           : 64-bit memory-mapped slave (AXI4-Lite-style), level IRQ.
+    Clock         : single clock, target 100 MHz on an FPGA (single-cycle
+                    binary64 add/mul); ~400 MHz in a 28 nm ASIC.
+    Data format   : IEEE-754 binary64 (same results as the Python code).
+    Register map (word addresses):
+      0x000 CTRL     W   bit0 start, bit1 mode (0 nearest-hit, 1 any-hit)
+      0x001 STATUS   R   bit0 busy, bit1 done
+      0x002 NSPHERES RW  number of spheres in the table (<= 16)
+      0x003 TMIN     RW  acceptance threshold: -EPSILON (nearest) / +EPSILON (shadow)
+      0x004-0x009    RW  ray origin px,py,pz and unit direction dx,dy,dz
+      0x00A RESULT   R   bit0 hit, bits[15:8] sphere index
+      0x00B RESULT_T R   distance t of the reported hit
+      0x00C CYCLES   R   cycles of the last query
+      0x100+4*k+f    RW  sphere k: f=0..2 centre x,y,z, f=3 radius^2
+    Inputs per query: 6 doubles + mode + threshold. Outputs: hit flag,
+    sphere index (8 bit), t (binary64).
+
+5.3 Architecture (rtl/ray_sphere_accel.v, ../common/rtl/*.v)
+    Datapath: one fp_add, one fp_mul (single cycle, bit-exact IEEE), one
+    fp_rsqrt (17 cycles; sqrt(x) = x * rsqrt(x)), two fp_lt comparators
+    (t > TMIN, t < best_t), a 16-entry sphere table (16 x 4 x 64 bit), ray
+    registers, temporaries and the best-hit register (flag, index, t).
+    Control FSM, per sphere k (each micro-step issues <= 1 add + 1 mul):
+      uop 0-2   cp = c - p                (overlapped with cx*dx, cy*dy)
+      uop 3-4   v = cx*dx + cy*dy + cz*dz (same order as Vector.dot)
+      uop 4-8   cp.cp - v*v
+      uop 9     disc = r^2 - (cp.cp - v*v)
+      uop 10    disc < 0 ? next sphere : start rsqrt(disc)
+      uop 11-12 t = v - disc * rsqrt(disc)
+      uop 13    nearest: accept if t > TMIN and (no hit or t < best)
+                any-hit: first t > TMIN ends the query (early exit)
+    Cost: 11 cycles for a missed sphere, ~ 32 cycles for a hit candidate.
+    Measured: 78 cycles per nearest-hit query, 98 per any-hit query
+    (7 spheres), i.e. 0.78 / 0.98 us at 100 MHz.
+
+    Block diagram: hw/docs/ray_sphere_accel_block_diagram.svg
+
+          +-------- Host --------+         +------------------ ray_sphere_accel ------------------+
+          | rayColour /          |  MMIO   | Query regs (p, d, TMIN, mode) --+                    |
+          | _lightIsVisible      |<=======>| Sphere table 16 x (c, r^2) -----+--> operand --> fp_add  |
+          |  -> driver: write    | 64-bit  |                                 |    muxes   --> fp_mul  |--> temps
+          |     ray, start, wait |   IRQ   | Control FSM (k, uop) -----------+    (uop)   --> fp_rsqrt|   cp v disc t
+          |     IRQ, read result |<--------|   early exit (any-hit)                        --> 2x fp_lt -> best hit
+          +----------------------+         |   RESULT / RESULT_T <------------------------------ (flag, k, t)
+                                           +------------------------------------------------------+
+
+5.4 Hardware/software interface
+    Per scene (once per frame): the driver writes the sphere table
+    (7 x 4 doubles) and NSPHERES.
+    Per query: Scene.rayColour and Scene._lightIsVisible call a C-extension
+    function intersect(ray, mode) that writes 6 ray doubles, TMIN and CTRL
+    (8 posted writes), waits for done (IRQ or polling STATUS) and reads
+    RESULT and RESULT_T (2 reads). The Python code keeps the ground plane
+    test (one dot product) and compares its t with the hardware result, then
+    shades as before. Sphere.intersectionTime is no longer called in the
+    search loops.
+    For a PCIe card a per-query MMIO round trip (~ 1 us per uncached read)
+    would eat the gain, so the production interface batches: the host
+    writes a queue of rays to DMA memory (e.g. all primary rays of a
+    scanline, then all shadow rays of those hits) and the unit writes
+    results back by DMA, one interrupt per batch.
+
+5.5 Verification (hw/run_sim.sh, hw/sim_result.txt)
+    tb/gen_vectors.py builds the benchmark scene with the ORIGINAL classes
+    and computes, with the original intersectionTime and selection rules,
+    the expected result of a 20 x 20 sub-sample of primary rays plus the
+    shadow rays of every hit. tb/tb_ray_sphere_accel.v drives the unit over
+    MMIO exactly like the driver above:
+      458 queries (400 nearest-hit, 58 any-hit), 30 hits
+      avg cycles/query: nearest-hit 78, any-hit 98
+      max relative error of t vs Python original = 2.416945e-16
+      PASS
+    (hit/miss and sphere index match exactly; t differs at most in the last
+    bit because sqrt is computed as x*rsqrt(x) instead of a correctly
+    rounded sqrt.)
+
+5.6 Expected performance (assumptions stated)
+    Software (optimized): 5.29 us per query, 137 ms of the 257 ms frame.
+      A) SoC integration (accelerator on AXI next to the CPU, ~ 0.15 us per
+         MMIO access, 10 accesses + ~ 0.86 us average compute @100 MHz):
+         ~ 2.4 us per query -> saves ~ 75 ms -> frame ~ 182 ms
+         => 1.41x over optimized software, 4.4x over the original.
+      B) Batched DMA, 400 MHz ASIC, 7 parallel sphere lanes (one rsqrt
+         each): ~ 25 cycles = 0.06 us per query, host overhead amortized ->
+         sphere search ~ 2 ms -> frame ~ 122 ms
+         => 2.1x over optimized software (Amdahl limit 2.14x), 6.6x over
+         the original.
+      C) Unbatched PCIe MMIO: ~ 3 x 1 us reads + writes + compute ~ 4.7 us
+         per query - no gain. The interface matters as much as the datapath.
+    Going beyond 2.14x requires moving more of the frame (shading,
+    reflection recursion, the plane) into hardware or batching the whole
+    frame - i.e. a full ray-tracing pipeline rather than an offload.
+
+5.7 Performance / area / power / frequency trade-offs
+    Area (estimate, single-lane design as written): 2 x 53x53-bit multipliers
+      (main + rsqrt), 2 x 64-bit FP adders, 2 comparators, ~ 5 kbit of
+      registers (sphere table 4 kbit). FPGA: ~ 20-30 DSP48, ~ 5-7 k LUTs.
+      ASIC 28 nm: ~ 0.06-0.09 mm^2. Option B multiplies the FP area by ~ 7.
+    Frequency: single-cycle binary64 units limit the clock to ~ 100 MHz on
+      an FPGA; pipelining the units (3-4 stages) and interleaving several
+      rays to hide their latency would triple fmax.
+    Precision: binary64 keeps the image byte-identical to the software.
+      binary32 would cut multiplier area by ~ 4x and is what GPU RT cores
+      use, but could change a few boundary pixels - acceptable for graphics,
+      not for a benchmark that must reproduce the reference output.
+    Power (estimate): ~ 0.3-0.5 W for the single lane at 100 MHz, against a
+      ~ 10 W core spending 5.29 us of interpreter time per query: energy per
+      query ~ 53 uJ (CPU) vs < 1 uJ (accelerator compute), so even option A
+      cuts the energy of the search loop by > 10x.
+    Flexibility: the table size (16), modes (nearest / any-hit) and
+      threshold are programmable, so the same unit serves primary,
+      reflected and shadow rays and any scene of up to 16 spheres.
+
 
 6. CONCLUSION
 ------------------------------------------------------------------------------
-    TODO: summarize SW speedup achieved and expected HW speedup.
+  * Software: __slots__, inlined vector math, a hoisted shadow ray and a
+    fused nearest-hit loop make raytrace 3.11x faster (800 ms -> 257 ms,
+    -68 %), with a byte-identical image. Function calls per frame drop by
+    84 %.
+  * After the software work, the ray-vs-sphere search is 53 % of the frame.
+    ray_sphere_accel offloads it: a binary64 FSM datapath with an on-chip
+    sphere table, nearest-hit and early-exit any-hit modes, verified
+    against the original Python on 458 queries (t within 2.4e-16).
+  * Estimated end-to-end gain: 1.4x over the optimized software on an SoC
+    (4.4x over the original), up to the Amdahl limit of 2.1x (6.6x over the
+    original) with batched DMA and parallel sphere lanes. The analysis also
+    shows that an unbatched PCIe interface would erase the benefit.

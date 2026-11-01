@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 600" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <rect width="980" height="600" fill="#ffffff"/>
+  <text x="490" y="28" text-anchor="middle" font-size="18" font-weight="bold">ray_sphere_accel - ray vs. sphere-table intersection unit (binary64, 100 MHz)</text>
+
+  <!-- Host -->
+  <rect x="20" y="70" width="190" height="230" rx="8" fill="#eef3fb" stroke="#4a6fa5"/>
+  <text x="115" y="94" text-anchor="middle" font-weight="bold">Host CPU</text>
+  <text x="115" y="116" text-anchor="middle">Python raytracer</text>
+  <text x="115" y="134" text-anchor="middle">rayColour / _lightIsVisible</text>
+  <rect x="40" y="150" width="150" height="132" rx="5" fill="#fff" stroke="#4a6fa5"/>
+  <text x="115" y="170" text-anchor="middle" font-weight="bold">Driver (C ext.)</text>
+  <text x="115" y="190" text-anchor="middle">per scene:</text>
+  <text x="115" y="206" text-anchor="middle">write sphere table</text>
+  <text x="115" y="226" text-anchor="middle">per ray:</text>
+  <text x="115" y="242" text-anchor="middle">write p, d, TMIN, mode</text>
+  <text x="115" y="258" text-anchor="middle">start, wait IRQ,</text>
+  <text x="115" y="274" text-anchor="middle">read RESULT, T</text>
+
+  <!-- Bus -->
+  <rect x="235" y="70" width="44" height="470" rx="6" fill="#f5f5f5" stroke="#888"/>
+  <text x="257" y="305" text-anchor="middle" transform="rotate(-90 257 305)">AXI4-Lite / PCIe BAR - 64-bit MMIO</text>
+  <line x1="210" y1="170" x2="233" y2="170" stroke="#333" marker-end="url(#a)"/>
+  <line x1="235" y1="210" x2="212" y2="210" stroke="#333" marker-end="url(#a)"/>
+
+  <rect x="300" y="55" width="660" height="525" rx="10" fill="none" stroke="#333" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="315" y="75" font-weight="bold">ray_sphere_accel</text>
+
+  <!-- Regs -->
+  <rect x="320" y="90" width="190" height="170" rx="6" fill="#fdf3e3" stroke="#c98a2b"/>
+  <text x="415" y="110" text-anchor="middle" font-weight="bold">Query registers</text>
+  <text x="335" y="132">CTRL (start, mode)</text>
+  <text x="335" y="150">STATUS, NSPHERES</text>
+  <text x="335" y="168">TMIN (+/- EPSILON)</text>
+  <text x="335" y="186">ray p = (px,py,pz)</text>
+  <text x="335" y="204">ray d = (dx,dy,dz)</text>
+  <text x="335" y="222">RESULT (hit, index)</text>
+  <text x="335" y="240">RESULT_T, CYCLES</text>
+  <line x1="279" y1="170" x2="318" y2="170" stroke="#333" marker-end="url(#a)"/>
+
+  <rect x="320" y="285" width="190" height="135" rx="6" fill="#e9f6ec" stroke="#3d8b4f"/>
+  <text x="415" y="305" text-anchor="middle" font-weight="bold">Sphere table</text>
+  <text x="415" y="327" text-anchor="middle">16 x (cx, cy, cz, r^2)</text>
+  <text x="415" y="347" text-anchor="middle">x 64 bit</text>
+  <text x="415" y="367" text-anchor="middle">0x100 + 4*k + f</text>
+  <text x="415" y="395" text-anchor="middle">written once per scene</text>
+  <line x1="279" y1="350" x2="318" y2="350" stroke="#333" marker-end="url(#a)"/>
+
+  <rect x="320" y="445" width="190" height="115" rx="6" fill="#f3ecf8" stroke="#7a4c9e"/>
+  <text x="415" y="465" text-anchor="middle" font-weight="bold">Control FSM</text>
+  <text x="415" y="486" text-anchor="middle">IDLE -> TEST(k, uop)</text>
+  <text x="415" y="504" text-anchor="middle">disc&lt;0: skip | RSQ</text>
+  <text x="415" y="522" text-anchor="middle">any-hit: early exit</text>
+  <text x="415" y="540" text-anchor="middle">IRQ = done</text>
+  <line x1="320" y1="540" x2="281" y2="540" stroke="#333" marker-end="url(#a)"/>
+  <text x="288" y="532" font-size="11">IRQ</text>
+
+  <rect x="545" y="150" width="70" height="300" rx="6" fill="#eeeeee" stroke="#666"/>
+  <text x="580" y="300" text-anchor="middle" transform="rotate(-90 580 300)">operand muxes (per uop)</text>
+  <line x1="510" y1="200" x2="543" y2="200" stroke="#333" marker-end="url(#a)"/>
+  <line x1="510" y1="350" x2="543" y2="350" stroke="#333" marker-end="url(#a)"/>
+  <line x1="510" y1="500" x2="580" y2="500" stroke="#7a4c9e"/>
+  <line x1="580" y1="500" x2="580" y2="452" stroke="#7a4c9e" marker-end="url(#a)"/>
+  <text x="588" y="485" font-size="11" fill="#7a4c9e">uop select</text>
+
+  <rect x="650" y="95" width="140" height="60" rx="6" fill="#e3f0fa" stroke="#2c6e9e"/>
+  <text x="720" y="120" text-anchor="middle" font-weight="bold">fp_add</text>
+  <text x="720" y="140" text-anchor="middle">1 cycle</text>
+  <rect x="650" y="175" width="140" height="60" rx="6" fill="#e3f0fa" stroke="#2c6e9e"/>
+  <text x="720" y="200" text-anchor="middle" font-weight="bold">fp_mul</text>
+  <text x="720" y="220" text-anchor="middle">1 cycle</text>
+  <rect x="650" y="255" width="140" height="70" rx="6" fill="#e3f0fa" stroke="#2c6e9e"/>
+  <text x="720" y="280" text-anchor="middle" font-weight="bold">fp_rsqrt</text>
+  <text x="720" y="300" text-anchor="middle">17 cycles</text>
+  <text x="720" y="316" text-anchor="middle" font-size="11">sqrt(x) = x * rsqrt(x)</text>
+  <rect x="650" y="345" width="140" height="80" rx="6" fill="#e3f0fa" stroke="#2c6e9e"/>
+  <text x="720" y="368" text-anchor="middle" font-weight="bold">2 x fp_lt</text>
+  <text x="720" y="388" text-anchor="middle">t &gt; TMIN</text>
+  <text x="720" y="406" text-anchor="middle">t &lt; best_t</text>
+  <line x1="615" y1="125" x2="648" y2="125" stroke="#333" marker-end="url(#a)"/>
+  <line x1="615" y1="205" x2="648" y2="205" stroke="#333" marker-end="url(#a)"/>
+  <line x1="615" y1="290" x2="648" y2="290" stroke="#333" marker-end="url(#a)"/>
+
+  <rect x="815" y="95" width="125" height="210" rx="6" fill="#fff8d6" stroke="#b39b2a"/>
+  <text x="877" y="117" text-anchor="middle" font-weight="bold">Temp registers</text>
+  <text x="877" y="143" text-anchor="middle">cp = (cx,cy,cz)</text>
+  <text x="877" y="163" text-anchor="middle">v = cp . d</text>
+  <text x="877" y="183" text-anchor="middle">t0 t1 t2</text>
+  <text x="877" y="203" text-anchor="middle">disc, t</text>
+  <line x1="790" y1="125" x2="813" y2="140" stroke="#333" marker-end="url(#a)"/>
+  <line x1="790" y1="205" x2="813" y2="190" stroke="#333" marker-end="url(#a)"/>
+  <line x1="790" y1="290" x2="813" y2="250" stroke="#333" marker-end="url(#a)"/>
+  <path d="M877,305 L877,335 L600,335 L600,148" fill="none" stroke="#333"/>
+  
+
+  <rect x="815" y="345" width="125" height="110" rx="6" fill="#fde8e8" stroke="#b04a4a"/>
+  <text x="877" y="367" text-anchor="middle" font-weight="bold">Best hit</text>
+  <text x="877" y="391" text-anchor="middle">hit flag</text>
+  <text x="877" y="411" text-anchor="middle">sphere index k</text>
+  <text x="877" y="431" text-anchor="middle">best t</text>
+  <line x1="790" y1="385" x2="813" y2="385" stroke="#333" marker-end="url(#a)"/>
+  <path d="M877,455 L877,570 L528,570 L528,245 L512,245" fill="none" stroke="#b04a4a" marker-end="url(#a)"/>
+  <text x="560" y="564" font-size="11" fill="#b04a4a">RESULT / RESULT_T readable by host</text>
+</svg>

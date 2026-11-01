@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 600" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <rect width="980" height="600" fill="#ffffff"/>
+  <text x="490" y="28" text-anchor="middle" font-size="18" font-weight="bold">nbody_accel - N-body integration accelerator (binary64, 100 MHz)</text>
+
+  <!-- Host -->
+  <rect x="20" y="70" width="190" height="200" rx="8" fill="#eef3fb" stroke="#4a6fa5"/>
+  <text x="115" y="94" text-anchor="middle" font-weight="bold">Host CPU</text>
+  <text x="115" y="118" text-anchor="middle">Python benchmark</text>
+  <text x="115" y="136" text-anchor="middle">advance(dt, n)</text>
+  <rect x="40" y="152" width="150" height="100" rx="5" fill="#fff" stroke="#4a6fa5"/>
+  <text x="115" y="172" text-anchor="middle" font-weight="bold">Driver (C ext.)</text>
+  <text x="115" y="192" text-anchor="middle">1. write bodies, n, dt</text>
+  <text x="115" y="210" text-anchor="middle">2. write CTRL.start</text>
+  <text x="115" y="228" text-anchor="middle">3. wait IRQ</text>
+  <text x="115" y="246" text-anchor="middle">4. read bodies back</text>
+
+  <!-- Bus -->
+  <rect x="235" y="70" width="44" height="470" rx="6" fill="#f5f5f5" stroke="#888"/>
+  <text x="257" y="305" text-anchor="middle" transform="rotate(-90 257 305)">AXI4-Lite / PCIe BAR - 64-bit MMIO</text>
+  <line x1="210" y1="160" x2="233" y2="160" stroke="#333" marker-end="url(#a)"/>
+  <line x1="235" y1="200" x2="212" y2="200" stroke="#333" marker-end="url(#a)"/>
+
+  <!-- Accelerator boundary -->
+  <rect x="300" y="55" width="660" height="525" rx="10" fill="none" stroke="#333" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="315" y="75" font-weight="bold">nbody_accel</text>
+
+  <!-- MMIO regs -->
+  <rect x="320" y="90" width="190" height="150" rx="6" fill="#fdf3e3" stroke="#c98a2b"/>
+  <text x="415" y="110" text-anchor="middle" font-weight="bold">Control registers</text>
+  <text x="335" y="132">0x000 CTRL (start)</text>
+  <text x="335" y="150">0x001 STATUS (busy/done)</text>
+  <text x="335" y="168">0x002 NBODIES</text>
+  <text x="335" y="186">0x003 NSTEPS</text>
+  <text x="335" y="204">0x004 DT</text>
+  <text x="335" y="222">0x005 CYCLES</text>
+  <line x1="279" y1="160" x2="318" y2="160" stroke="#333" marker-end="url(#a)"/>
+
+  <!-- Body RF -->
+  <rect x="320" y="270" width="190" height="150" rx="6" fill="#e9f6ec" stroke="#3d8b4f"/>
+  <text x="415" y="290" text-anchor="middle" font-weight="bold">Body register file</text>
+  <text x="415" y="312" text-anchor="middle">8 bodies x 7 x 64 bit</text>
+  <text x="415" y="332" text-anchor="middle">x y z | vx vy vz | m</text>
+  <text x="415" y="352" text-anchor="middle">0x100 + 8*i + k</text>
+  <text x="415" y="380" text-anchor="middle">2 read ports (body i, j)</text>
+  <text x="415" y="398" text-anchor="middle">1 write port</text>
+  <line x1="279" y1="340" x2="318" y2="340" stroke="#333" marker-end="url(#a)"/>
+
+  <!-- FSM -->
+  <rect x="320" y="445" width="190" height="115" rx="6" fill="#f3ecf8" stroke="#7a4c9e"/>
+  <text x="415" y="465" text-anchor="middle" font-weight="bold">Control FSM</text>
+  <text x="415" y="486" text-anchor="middle">IDLE -> PAIR(i,j) &lt;-&gt; RSQ</text>
+  <text x="415" y="504" text-anchor="middle">-> POS(i) -> next step</text>
+  <text x="415" y="522" text-anchor="middle">counters: step, i, j, uop</text>
+  <text x="415" y="540" text-anchor="middle">IRQ = done</text>
+  <line x1="320" y1="540" x2="281" y2="540" stroke="#333" marker-end="url(#a)"/>
+  <text x="288" y="532" font-size="11">IRQ</text>
+
+  <!-- Operand mux -->
+  <rect x="545" y="150" width="70" height="300" rx="6" fill="#eeeeee" stroke="#666"/>
+  <text x="580" y="300" text-anchor="middle" transform="rotate(-90 580 300)">operand muxes (per uop)</text>
+  <line x1="510" y1="345" x2="543" y2="345" stroke="#333" marker-end="url(#a)"/>
+  <line x1="510" y1="200" x2="543" y2="200" stroke="#333" marker-end="url(#a)"/>
+  <line x1="510" y1="500" x2="580" y2="500" stroke="#7a4c9e"/>
+  <line x1="580" y1="500" x2="580" y2="452" stroke="#7a4c9e" marker-end="url(#a)"/>
+  <text x="588" y="485" font-size="11" fill="#7a4c9e">uop select</text>
+
+  <!-- FP units -->
+  <rect x="650" y="110" width="140" height="70" rx="6" fill="#e3f0fa" stroke="#2c6e9e"/>
+  <text x="720" y="138" text-anchor="middle" font-weight="bold">fp_add</text>
+  <text x="720" y="158" text-anchor="middle">a +/- b, 1 cycle</text>
+  <rect x="650" y="210" width="140" height="70" rx="6" fill="#e3f0fa" stroke="#2c6e9e"/>
+  <text x="720" y="238" text-anchor="middle" font-weight="bold">fp_mul</text>
+  <text x="720" y="258" text-anchor="middle">a * b, 1 cycle</text>
+  <rect x="650" y="310" width="140" height="80" rx="6" fill="#e3f0fa" stroke="#2c6e9e"/>
+  <text x="720" y="336" text-anchor="middle" font-weight="bold">fp_rsqrt</text>
+  <text x="720" y="356" text-anchor="middle">seed + 4 Newton</text>
+  <text x="720" y="374" text-anchor="middle">17 cycles</text>
+  <line x1="615" y1="145" x2="648" y2="145" stroke="#333" marker-end="url(#a)"/>
+  <line x1="615" y1="245" x2="648" y2="245" stroke="#333" marker-end="url(#a)"/>
+  <line x1="615" y1="350" x2="648" y2="350" stroke="#333" marker-end="url(#a)"/>
+  <text x="632" y="340" font-size="11">r2</text>
+
+  <!-- Temp regs -->
+  <rect x="815" y="150" width="125" height="230" rx="6" fill="#fff8d6" stroke="#b39b2a"/>
+  <text x="877" y="172" text-anchor="middle" font-weight="bold">Temp registers</text>
+  <text x="877" y="198" text-anchor="middle">dx dy dz</text>
+  <text x="877" y="218" text-anchor="middle">t0 t1 r2</text>
+  <text x="877" y="238" text-anchor="middle">inv mag</text>
+  <text x="877" y="258" text-anchor="middle">b1m b2m</text>
+  <line x1="790" y1="145" x2="813" y2="190" stroke="#333" marker-end="url(#a)"/>
+  <line x1="790" y1="245" x2="813" y2="245" stroke="#333" marker-end="url(#a)"/>
+  <line x1="790" y1="350" x2="813" y2="320" stroke="#333" marker-end="url(#a)"/>
+
+  <!-- feedback / writeback -->
+  <path d="M877,380 L877,430 L600,430 L600,452" fill="none" stroke="#333"/>
+  
+  <text x="700" y="424" font-size="11">operands (feedback)</text>
+  <path d="M940,265 L955,265 L955,570 L528,570 L528,405 L512,405" fill="none" stroke="#3d8b4f" marker-end="url(#a)"/>
+  <text x="680" y="564" font-size="11" fill="#3d8b4f">write-back: v[i], v[j] (pair) / x,y,z (position update)</text>
+</svg>

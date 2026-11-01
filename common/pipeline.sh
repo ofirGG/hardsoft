@@ -7,6 +7,7 @@
 #   fetch     - copy the original benchmark source into src/ (and seed optimized.py)
 #   check     - verify optimized.py produces the same results as original.py
 #   profile   - perf record + report + flame graph, for original and optimized
+#   cprofile  - Python-level cProfile breakdown, for original and optimized
 #   compare   - time original vs optimized with pyperf and print the comparison
 #   all       - every stage above, in order
 set -euo pipefail
@@ -20,6 +21,10 @@ RES="$BENCH_DIR/results"
 FLAMEGRAPH="$REPO_ROOT/tools/FlameGraph"
 PY=python3          # release build: used for all timing
 PY_DBG=python3-dbg  # debug build: used for profiling (gives CPython symbols)
+# The QEMU guest counts hardware cycles but gets no sampling interrupts from
+# them, so `perf record -e cycles` collects nothing. The cpu-clock software
+# timer samples correctly at the same frequency.
+PERF_EVENT="${PERF_EVENT:-cpu-clock}"
 
 mkdir -p "$RES" "$SRC"
 
@@ -57,7 +62,7 @@ profile_one() {
     local name="$1"
     local data="$RES/perf_$name.data"
     log "Profiling $name.py with perf ($PY_DBG)"
-    perf record -F 999 -g -o "$data" -- \
+    perf record -e "$PERF_EVENT" -F 999 -g -o "$data" -- \
         "$PY_DBG" "$SRC/$name.py" --fast -o "$RES/.profile_tmp.json"
     rm -f "$RES/.profile_tmp.json"
     perf report -i "$data" --stdio > "$RES/perf_report_$name.txt" 2>/dev/null
@@ -72,6 +77,16 @@ stage_profile() {
     [ -x "$FLAMEGRAPH/flamegraph.pl" ] || { echo "Run common/setup_env.sh first"; exit 1; }
     profile_one original
     profile_one optimized
+}
+
+# perf sees CPython's C functions; cProfile attributes time to Python functions.
+stage_cprofile() {
+    local name
+    for name in original optimized; do
+        log "cProfile of $name.py (one in-process benchmark iteration)"
+        "$PY" "$REPO_ROOT/common/cprofile_bench.py" "$BENCH" "$SRC/$name.py" \
+            > "$RES/cprofile_$name.txt"
+    done
 }
 
 stage_compare() {
@@ -90,8 +105,9 @@ run_stages() {
         fetch)    stage_fetch ;;
         check)    stage_check ;;
         profile)  stage_profile ;;
+        cprofile) stage_cprofile ;;
         compare)  stage_compare ;;
-        all)      stage_baseline; stage_fetch; stage_check; stage_profile; stage_compare ;;
-        *) echo "Usage: $0 [baseline|fetch|check|profile|compare|all]"; exit 1 ;;
+        all)      stage_baseline; stage_fetch; stage_check; stage_profile; stage_cprofile; stage_compare ;;
+        *) echo "Usage: $0 [baseline|fetch|check|profile|cprofile|compare|all]"; exit 1 ;;
     esac
 }

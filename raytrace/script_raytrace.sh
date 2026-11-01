@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Full pipeline for the pyperformance "raytrace" benchmark.
-# Usage: ./script_raytrace.sh [baseline|fetch|check|profile|compare|all]   (default: all)
+# Usage: ./script_raytrace.sh [baseline|fetch|check|profile|cprofile|compare|all]   (default: all)
 # Run common/setup_env.sh once before the first run.
 set -euo pipefail
 

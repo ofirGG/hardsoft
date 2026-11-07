@@ -9,6 +9,7 @@
 #   profile   - perf record + report + flame graph, for original and optimized
 #   cprofile  - Python-level cProfile breakdown, for original and optimized
 #   compare   - time original vs optimized with pyperf and print the comparison
+#   ablation  - time each cumulative optimization step (src/ablation/step*.py)
 #   all       - every stage above, in order
 set -euo pipefail
 
@@ -98,6 +99,26 @@ stage_compare() {
         | tee "$RES/comparison.txt"
 }
 
+# Every src/ablation/stepN_<name>.py adds one optimization on top of the
+# previous step; the last step is optimized.py itself. All variants are checked
+# for identical output, then timed in one session so the numbers are comparable.
+stage_ablation() {
+    local out="$RES/ablation" steps=() files=() f name
+    mkdir -p "$out"
+    for f in "$SRC"/ablation/step*.py; do
+        steps+=("ablation/$(basename "$f" .py)")
+    done
+    log "Checking ablation variants: ${steps[*]}"
+    "$PY" "$SRC/check_correctness.py" "${steps[@]}" optimized
+    for name in original "${steps[@]}" optimized; do
+        log "Timing $name.py"
+        rm -f "$out/$(basename "$name").json"
+        "$PY" "$SRC/$name.py" -o "$out/$(basename "$name").json"
+        files+=("$out/$(basename "$name").json")
+    done
+    "$PY" -m pyperf compare_to "${files[@]}" --table | tee "$out/ablation.txt"
+}
+
 run_stages() {
     local stage="${1:-all}"
     case "$stage" in
@@ -107,7 +128,8 @@ run_stages() {
         profile)  stage_profile ;;
         cprofile) stage_cprofile ;;
         compare)  stage_compare ;;
-        all)      stage_baseline; stage_fetch; stage_check; stage_profile; stage_cprofile; stage_compare ;;
-        *) echo "Usage: $0 [baseline|fetch|check|profile|cprofile|compare|all]"; exit 1 ;;
+        ablation) stage_ablation ;;
+        all)      stage_baseline; stage_fetch; stage_check; stage_profile; stage_cprofile; stage_compare; stage_ablation ;;
+        *) echo "Usage: $0 [baseline|fetch|check|profile|cprofile|compare|ablation|all]"; exit 1 ;;
     esac
 }

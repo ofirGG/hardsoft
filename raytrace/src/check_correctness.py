@@ -1,4 +1,5 @@
-"""Check that optimized.py renders exactly the same image as original.py.
+"""Check that optimized.py (or any variant given as an argument) renders
+exactly the same image as original.py.
 
 Builds the benchmark scene with each module, renders it, and compares the
 raw RGB canvas bytes.
@@ -12,7 +13,8 @@ WIDTH = HEIGHT = 100
 
 
 def load(name):
-    spec = importlib.util.spec_from_file_location(name, os.path.join(HERE, name + ".py"))
+    spec = importlib.util.spec_from_file_location(
+        os.path.basename(name), os.path.join(HERE, name + ".py"))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -37,13 +39,18 @@ def render(m):
 
 
 def main():
+    # Default: optimized.py. Any other src/-relative module can be passed,
+    # e.g. ablation/step1_slots.
+    candidates = sys.argv[1:] or ["optimized"]
     ref = render(load("original"))
-    opt = render(load("optimized"))
-    if ref != opt:
-        diff = sum(a != b for a, b in zip(ref, opt))
-        print("MISMATCH: %d of %d bytes differ" % (diff, len(ref)))
-        sys.exit(1)
-    print("OK: %dx%d image is byte-identical (%d bytes)" % (WIDTH, HEIGHT, len(ref)))
+    for name in candidates:
+        out = render(load(name))
+        if ref != out:
+            diff = sum(a != b for a, b in zip(ref, out))
+            print("MISMATCH (%s): %d of %d bytes differ" % (name, diff, len(ref)))
+            sys.exit(1)
+        print("OK (%s): %dx%d image is byte-identical (%d bytes)"
+              % (name, WIDTH, HEIGHT, len(ref)))
 
 
 if __name__ == "__main__":

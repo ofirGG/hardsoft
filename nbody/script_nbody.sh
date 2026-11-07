@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Full pipeline for the pyperformance "nbody" benchmark.
-# Usage: ./script_nbody.sh [baseline|fetch|check|profile|cprofile|compare|all]   (default: all)
+# Usage: ./script_nbody.sh [baseline|fetch|check|profile|cprofile|compare|ablation|all]   (default: all)
 # Run common/setup_env.sh once before the first run.
 set -euo pipefail
 

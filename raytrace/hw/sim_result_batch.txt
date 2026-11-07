@@ -1,0 +1,8 @@
+batch of 458 rays (STALL=0), 30 hits
+first ray word in -> last result out: 43187 cycles, 94.29 cycles/ray
+max relative error of t vs Python original = 2.416945e-16
+PASS
+batch of 458 rays (STALL=1), 30 hits
+first ray word in -> last result out: 43190 cycles, 94.30 cycles/ray
+max relative error of t vs Python original = 2.416945e-16
+PASS

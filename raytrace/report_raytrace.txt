@@ -7,9 +7,10 @@ Environment
   VM          : QEMU/KVM, Ubuntu 22.04 (kernel 5.15.0-1080-kvm), 4 vCPU, 8 GB
   Python      : CPython 3.10.12 (python3 for timing, python3-dbg for perf)
   Tools       : pyperformance 1.14.0, pyperf, perf 5.15, FlameGraph,
-                cProfile, Icarus Verilog
+                cProfile, Icarus Verilog, Yosys 0.9
   Reproduce   : ./common/setup_env.sh && ./raytrace/script_raytrace.sh
                 ./raytrace/hw/run_sim.sh   (hardware simulation)
+                ./common/synth/run_synth.sh   (logic synthesis)
 
 
 1. OVERVIEW
@@ -159,6 +160,24 @@ pyperf, release python3, same runner for both files (results/comparison.txt):
 
   Execution time reduced by 68 % (requirement: >= 7 %).
 
+  Contribution of each optimization (ablation, ./script_raytrace.sh ablation
+  -> results/ablation/ablation.txt). Each step adds one optimization to the
+  previous one; all variants render a byte-identical image and are timed in
+  the same session:
+      step                         file                       time            cumulative  saved   share
+      original                     src/original.py            799 ms +- 5 ms  1.00x       -       -
+      + O1 __slots__               src/ablation/step1_slots   695 ms +- 6 ms  1.15x       104 ms  19 %
+      + O2/O5 inlined vector math  src/ablation/step2_inline  385 ms +- 2 ms  2.07x       310 ms  57 %
+      + O3 hoisted shadow ray      src/ablation/step3_hoist   281 ms +- 2 ms  2.84x       104 ms  19 %
+      + O4 fused nearest-hit loop  src/optimized.py           258 ms +- 2 ms  3.10x        23 ms   4 %
+  ("share" = fraction of the total 541 ms saved; the savings of a step are
+  measured on top of the previous steps, so the order matters - e.g. O3
+  saves 8 Ray constructions per shadow query, which are cheaper after O2.)
+  The ranking matches the profile: inlining removes the largest cost
+  (method calls and temporary Vectors, B1 + B3), __slots__ and the hoisted
+  shadow ray each remove about a fifth, and the fused loop is a small
+  finishing step.
+
   After optimization (results/cprofile_optimized.txt,
   results/perf_report_optimized.txt, results/flamegraph_optimized.svg):
     * function calls per frame: 3,086,309 -> 500,336 (-84 %)
@@ -253,6 +272,25 @@ pyperf, release python3, same runner for both files (results/comparison.txt):
     scanline, then all shadow rays of those hits) and the unit writes
     results back by DMA, one interrupt per batch.
 
+    Batched front end (rtl/ray_batch_accel.v, implemented and verified)
+    ray_batch_accel wraps the unchanged ray_sphere_accel core and replaces
+    the per-query MMIO traffic with two 64-bit valid/ready streams - the
+    interface a DMA engine (e.g. AXI-Stream DMA) presents:
+      in  : 7 words per ray - word 0 bit0 = mode, then px, py, pz, dx, dy, dz
+            (TMIN = -/+EPSILON is derived from the mode in hardware)
+      out : 2 words per ray, in input order - {hit, index}, t
+      cfg : sphere table and NSPHERES, written once per frame (same map)
+    A 7-word prefetch buffer accepts the next ray while the core computes,
+    and the previous result waits in an output register, so stream transfers
+    overlap with computation. Handing a buffered ray to the core and reading
+    the result back costs ~ 14 cycles per ray (8 register writes, start,
+    2 reads, control), with no CPU involvement per ray.
+    Software side: the renderer is restructured into waves ("wavefront"
+    ray tracing) - all primary rays of a frame or scanline in one batch,
+    then all shadow rays and reflected rays of the hits in the next batch -
+    because a reflected ray can only be built after its parent's hit is
+    known. Each wave is one DMA transfer in each direction and one IRQ.
+
 5.5 Verification (hw/run_sim.sh, hw/sim_result.txt)
     tb/gen_vectors.py builds the benchmark scene with the ORIGINAL classes
     and computes, with the original intersectionTime and selection rules,
@@ -266,6 +304,20 @@ pyperf, release python3, same runner for both files (results/comparison.txt):
     (hit/miss and sphere index match exactly; t differs at most in the last
     bit because sqrt is computed as x*rsqrt(x) instead of a correctly
     rounded sqrt.)
+    The batched front end is verified with the same golden vectors
+    (tb/tb_ray_batch_accel.v -> hw/sim_result_batch.txt): all 458 rays are
+    streamed in as one batch and the result stream is checked in order,
+    once with both streams always ready (throughput) and once with
+    pseudo-random stalls on both handshakes (protocol robustness):
+      batch of 458 rays (STALL=0), 30 hits
+      first ray word in -> last result out: 43187 cycles, 94.29 cycles/ray
+      max relative error of t vs Python original = 2.416945e-16
+      PASS
+      batch of 458 rays (STALL=1), 30 hits
+      first ray word in -> last result out: 43190 cycles, 94.30 cycles/ray
+      PASS
+    The stalls barely change the throughput: the ~ 7-cycle stream transfer
+    of the next ray is hidden behind the ~ 80-cycle computation.
 
 5.6 Expected performance (assumptions stated)
     Software (optimized): 5.29 us per query, 137 ms of the 257 ms frame.
@@ -273,9 +325,19 @@ pyperf, release python3, same runner for both files (results/comparison.txt):
          MMIO access, 10 accesses + ~ 0.86 us average compute @100 MHz):
          ~ 2.4 us per query -> saves ~ 75 ms -> frame ~ 182 ms
          => 1.41x over optimized software, 4.4x over the original.
-      B) Batched DMA, 400 MHz ASIC, 7 parallel sphere lanes (one rsqrt
-         each): ~ 25 cycles = 0.06 us per query, host overhead amortized ->
-         sphere search ~ 2 ms -> frame ~ 122 ms
+      B1) Batched streams, one lane @100 MHz - as implemented in
+         ray_batch_accel (measured cycles): per frame 15,265 nearest-hit
+         queries x (78 + 14) cycles + 10,666 any-hit queries x (98 + 14)
+         cycles = 2.60 M cycles = 26.0 ms of accelerator time, instead of
+         137.2 ms of software search -> frame ~ 257.3 - 137.2 + 26.0
+         = ~ 146 ms => 1.76x over optimized software, 5.5x over the
+         original. (Assumes the CPU waits for each wave; the cost of
+         writing the rays into the DMA buffer is part of the remaining
+         software time. Overlapping the CPU's shading of one wave with the
+         accelerator's next wave would hide most of the 26 ms.)
+      B2) Batched DMA, 400 MHz ASIC, 7 parallel sphere lanes (one rsqrt
+         each), estimate: ~ 25 cycles = 0.06 us per query -> sphere search
+         ~ 2 ms -> frame ~ 122 ms
          => 2.1x over optimized software (Amdahl limit 2.14x), 6.6x over
          the original.
       C) Unbatched PCIe MMIO: ~ 3 x 1 us reads + writes + compute ~ 4.7 us
@@ -285,10 +347,25 @@ pyperf, release python3, same runner for both files (results/comparison.txt):
     frame - i.e. a full ray-tracing pipeline rather than an offload.
 
 5.7 Performance / area / power / frequency trade-offs
-    Area (estimate, single-lane design as written): 2 x 53x53-bit multipliers
-      (main + rsqrt), 2 x 64-bit FP adders, 2 comparators, ~ 5 kbit of
-      registers (sphere table 4 kbit). FPGA: ~ 20-30 DSP48, ~ 5-7 k LUTs.
-      ASIC 28 nm: ~ 0.06-0.09 mm^2. Option B multiplies the FP area by ~ 7.
+    Area (Yosys 0.9 synthesis, ../common/synth/run_synth.sh -> summary.txt;
+      both netlists pass `check -assert`):
+                            LUT     FF   LUT-RAM   gates   FF bits   NAND2-eq
+        ray_sphere_accel   17544   1575    512     74232    5671     131.5 k
+        ray_batch_accel    18348   1848    321     75422    6329     136.5 k
+      * Generic gates: 131.5 k NAND2 equivalents for the single lane - about
+        half FP units (two 53x53 multipliers, one inside fp_rsqrt, two adders,
+        two comparators), and 5,671 flip-flops, most of them the 16-entry
+        sphere table (4 kbit). In 28 nm: ~ 0.08-0.09 mm^2.
+      * The batched front end costs only + 5 k NAND2-eq (+ 4 %): the 7-word
+        prefetch buffer and the result registers (+ 658 flip-flops).
+      * Xilinx 7-series: 17.5 k LUTs (18.3 k batched); the multipliers are in
+        LUTs because Yosys 0.9 does not infer DSP48 blocks. With DSP
+        inference: ~ 20-24 DSP48 and ~ 5-6 k LUTs.
+      * As in nbody_accel, fp_rsqrt's private multiplier and adder are a
+        quarter of the area; the main units are idle while it runs, so they
+        could be shared at no cycle cost.
+      Option B2 (7 lanes) multiplies the FP part (~ 65 k NAND2-eq) by 7:
+      ~ 0.5 M NAND2-eq, ~ 0.3-0.4 mm^2 in 28 nm.
     Frequency: single-cycle binary64 units limit the clock to ~ 100 MHz on
       an FPGA; pipelining the units (3-4 stages) and interleaving several
       rays to hide their latency would triple fmax.
@@ -310,12 +387,20 @@ pyperf, release python3, same runner for both files (results/comparison.txt):
   * Software: __slots__, inlined vector math, a hoisted shadow ray and a
     fused nearest-hit loop make raytrace 3.11x faster (800 ms -> 257 ms,
     -68 %), with a byte-identical image. Function calls per frame drop by
-    84 %.
+    84 %. The ablation attributes 57 % of the saving to inlining, 19 %
+    each to __slots__ and the hoisted shadow ray, 4 % to the fused loop.
   * After the software work, the ray-vs-sphere search is 53 % of the frame.
     ray_sphere_accel offloads it: a binary64 FSM datapath with an on-chip
     sphere table, nearest-hit and early-exit any-hit modes, verified
     against the original Python on 458 queries (t within 2.4e-16).
-  * Estimated end-to-end gain: 1.4x over the optimized software on an SoC
-    (4.4x over the original), up to the Amdahl limit of 2.1x (6.6x over the
-    original) with batched DMA and parallel sphere lanes. The analysis also
-    shows that an unbatched PCIe interface would erase the benefit.
+  * ray_batch_accel adds a streaming (DMA-style) front end with a prefetch
+    buffer, verified on the same 458 rays with and without stream stalls:
+    94.3 cycles per ray with no per-ray CPU work. Synthesis (Yosys): ~ 132 k NAND2
+    equivalents (~ 0.09 mm^2 in 28 nm) for the core, + 4 % for the batched
+    front end.
+  * End-to-end gain: 1.4x over the optimized software with per-query MMIO
+    on an SoC (4.4x over the original), 1.76x with the implemented batched
+    lane (5.5x over the original, from measured cycles), and up to the
+    Amdahl limit of 2.1x (6.6x over the original) with parallel sphere
+    lanes. The analysis also shows that an unbatched PCIe interface would
+    erase the benefit.

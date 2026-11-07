@@ -7,9 +7,10 @@ Environment
   VM          : QEMU/KVM, Ubuntu 22.04 (kernel 5.15.0-1080-kvm), 4 vCPU, 8 GB
   Python      : CPython 3.10.12 (python3 for timing, python3-dbg for perf)
   Tools       : pyperformance 1.14.0, pyperf, perf 5.15, FlameGraph,
-                cProfile, Icarus Verilog
+                cProfile, Icarus Verilog, Yosys 0.9
   Reproduce   : ./common/setup_env.sh && ./nbody/script_nbody.sh
                 ./nbody/hw/run_sim.sh   (hardware simulation)
+                ./common/synth/run_synth.sh   (logic synthesis)
 
 
 1. OVERVIEW
@@ -154,6 +155,23 @@ pyperf, release python3, same runner for both files (results/comparison.txt):
   Execution time reduced by 38 % (requirement: >= 7 %). The difference is
   ~ 18 standard deviations, far outside measurement noise.
 
+  Contribution of each optimization (ablation, ./script_nbody.sh ablation ->
+  results/ablation/ablation.txt). Each step adds one optimization to the
+  previous one; all variants are checked bit-identical first and timed in
+  the same session:
+      step                                  file                      time            vs original
+      original                              src/original.py           230 ms +- 3 ms   1.00x
+      + full unrolling (lists kept)         src/ablation/step1_unroll 233 ms +- 6 ms   1.01x slower
+      + scalar replacement (= optimized)    src/optimized.py          144 ms +- 2 ms   1.60x faster
+  Unrolling alone gains nothing: it removes the pair loop and the tuple
+  unpacking, but every position is now read with an explicit subscript
+  (r0[0], ...), so the list accesses that dominate the profile (B1) remain.
+  All of the gain comes from scalar replacement, which in turn needs the
+  unrolling: only straight-line code can give every body coordinate its own
+  local variable. The two transformations are therefore one optimization,
+  and the ablation confirms that removing list access (B1), not the loop
+  overhead (B2), was the bottleneck that mattered.
+
   Profile after optimization (results/perf_report_optimized.txt,
   results/flamegraph_optimized.svg, 12K samples vs 18K for the same work):
     * list_ass_item, list_ass_subscript, PyNumber_AsSsize_t, _PyNumber_Index
@@ -264,9 +282,30 @@ pyperf, release python3, same runner for both files (results/comparison.txt):
     @400 MHz, ~60x vs original - at roughly 10x the FP area.
 
 5.7 Performance / area / power / frequency trade-offs
-    Area (estimate): 2 x 53x53-bit multipliers (main + rsqrt), 2 x 64-bit
-      FP adders, ~ 4.3 kbit of registers. FPGA: ~ 20-30 DSP48 slices and
-      ~ 4-6 k LUTs. ASIC 28 nm: ~ 0.05-0.08 mm^2.
+    Area (Yosys 0.9 synthesis, ../common/synth/run_synth.sh -> summary.txt;
+      both netlists pass `check -assert`):
+                         LUT     FF   LUT-RAM   gates   FF bits   NAND2-eq
+        fp_add          1495      0      0       3392       0       4.7 k
+        fp_mul          6848      0      0      17925       0      27.1 k
+        fp_rsqrt        7032    267      0      21958     267      33.2 k
+        nbody_accel    23456   1311   1088      77224    4895     133.1 k
+      * Generic gates: 133 k NAND2 equivalents. The FP units are about half
+        (two 53x53 multipliers - one inside fp_rsqrt - and two adders), the
+        4,895 flip-flops (body file 3.6 kbit, temporaries, control) ~ 22 k.
+        In 28 nm (NAND2 ~ 0.42-0.49 um^2, 70 % placement density):
+        ~ 0.08-0.09 mm^2.
+      * Xilinx 7-series: 23.5 k LUTs, 1.3 k FFs, 1,088 LUT-RAM cells for the
+        body file (replicated for the i, j and host read ports). Yosys 0.9
+        does not infer DSP48 blocks, so the multipliers are built from LUTs
+        (6.8 k LUTs each). With DSP inference in a vendor tool each 53x53
+        product takes ~ 9-12 DSP48E1 slices, i.e. ~ 20-24 DSP48 and ~ 10-11 k
+        LUTs for the accelerator - a fraction of a small device such as an
+        Artix-7 100T (63 k LUTs, 240 DSP48).
+      * Finding from synthesis: fp_rsqrt owns a multiplier and an adder
+        (33 k NAND2-eq, a quarter of the design). While it runs, the main
+        fp_mul/fp_add are idle - the pair schedule waits for the result - so
+        letting fp_rsqrt borrow them would save ~ 32 k NAND2-eq (~ 24 %) at
+        no cycle cost, only a wider operand multiplexer.
     Frequency: single-cycle binary64 units limit the clock (~ 100 MHz FPGA).
       Pipelining each unit to 3-4 stages roughly triples fmax but needs the
       FSM to schedule around the latency (or a pair pipeline as in 5.6).
@@ -287,9 +326,13 @@ pyperf, release python3, same runner for both files (results/comparison.txt):
     nbody 1.61x faster (232 ms -> 144 ms, -38 %), with bit-identical results.
     The profile confirms the list-store machinery is gone; what remains is
     boxed floating-point arithmetic, which the interpreter cannot avoid.
+    The ablation shows the gain comes from scalar replacement; unrolling
+    alone changes nothing but is what makes scalar replacement possible.
   * Hardware: nbody_accel moves the entire time-step loop into a binary64
     datapath (1 adder, 1 multiplier, 1 rsqrt unit, on-chip body registers).
     It is verified against the original Python to 3.7e-15 over 1000 steps,
     takes 390 cycles/step, and is estimated at 3x the original software at
     100 MHz (12x at 400 MHz), with a clear path to ~60x by pipelining, at
-    ~50x lower energy per step.
+    ~50x lower energy per step. Synthesis with Yosys gives 133 k NAND2 equivalents
+    (~ 0.09 mm^2 in 28 nm) and shows that sharing the main adder and
+    multiplier with fp_rsqrt would save ~ 24 % of the area at no cycle cost.

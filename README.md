@@ -10,6 +10,25 @@ This project analyzes, optimizes and proposes hardware acceleration for two
 | nbody     | 232 ms ± 5 ms | 144 ms ± 3 ms | **1.61×** (−38%) | bit-identical | `nbody_accel`: full time-step loop, 390 cycles/step | PASS, ≤ 3.7e-15 rel. error over 1000 steps |
 | raytrace  | 800 ms ± 5 ms | 257 ms ± 1 ms | **3.11×** (−68%) | byte-identical image | `ray_sphere_accel`: ray vs. sphere table, 78 cycles/query | PASS, 458/458 queries, t within 2.4e-16 |
 
+Where the speedup comes from (`results/ablation/ablation.txt`, each step adds one optimization):
+
+| raytrace | original | + `__slots__` | + inlined vector math | + hoisted shadow ray | + fused search |
+|----------|----------|---------------|-----------------------|----------------------|----------------|
+| time     | 799 ms   | 695 ms        | 385 ms                | 281 ms               | 258 ms         |
+
+| nbody | original | + full unrolling | + scalar replacement |
+|-------|----------|------------------|----------------------|
+| time  | 230 ms   | 233 ms           | 144 ms               |
+
+Hardware synthesis (Yosys 0.9, `common/synth/summary.txt`):
+
+| Module | Xilinx 7-series LUT / FF | NAND2 equivalents | Batched streaming |
+|--------|--------------------------|-------------------|-------------------|
+| `nbody_accel`      | 23.5 k / 1.3 k | 133 k (~0.09 mm² in 28 nm) | — |
+| `ray_sphere_accel` | 17.5 k / 1.6 k | 132 k (~0.09 mm² in 28 nm) | `ray_batch_accel`: +4 % area, 94.3 cycles/ray, PASS |
+
+LUT counts are an upper bound: Yosys 0.9 builds the multipliers from LUTs instead of DSP48 blocks.
+
 Measured with pyperf in the course QEMU/KVM VM (Ubuntu 22.04, CPython 3.10.12,
 Xeon E5-2630 v3 host). The full analysis is in `nbody/report_nbody.txt` and
 `raytrace/report_raytrace.txt`.
@@ -20,20 +39,23 @@ Xeon E5-2630 v3 host). The full analysis is in `nbody/report_nbody.txt` and
 .
 ├── common/
 │   ├── start_vm.sh          # boots the course QEMU image under KVM on the CSL server (tmux, SSH forward)
-│   ├── setup_env.sh         # one-time VM setup: perf, python3-dbg, pyperformance, FlameGraph, iverilog
+│   ├── setup_env.sh         # one-time VM setup: perf, python3-dbg, pyperformance, FlameGraph, iverilog, yosys
 │   ├── pipeline.sh          # shared pipeline stages used by both benchmark scripts
 │   ├── cprofile_bench.py    # in-process cProfile of one benchmark iteration
 │   ├── rtl/                 # binary64 FP library: fp_add, fp_mul, fp_rsqrt, fp_lt
-│   └── tb/tb_fp.v           # FP library testbench (bit-exact vs IEEE double)
+│   ├── tb/tb_fp.v           # FP library testbench (bit-exact vs IEEE double)
+│   └── synth/               # Yosys synthesis of all RTL → summary.txt (area per module)
 ├── nbody/
 │   ├── script_nbody.sh      # runs the full pipeline for nbody
 │   ├── report_nbody.txt     # analysis, optimizations, results, HW proposal
 │   ├── src/
 │   │   ├── original.py            # unmodified benchmark (pyperformance 1.14.0)
 │   │   ├── optimized.py           # optimized benchmark
-│   │   └── check_correctness.py   # optimized vs original, bit-exact
+│   │   ├── ablation/              # one file per cumulative optimization step
+│   │   └── check_correctness.py   # optimized (or any variant) vs original, bit-exact
 │   ├── results/             # pyperformance baseline, perf reports, flame graphs,
-│   │                        # cProfile, before/after pyperf JSON, comparison.txt
+│   │                        # cProfile, before/after pyperf JSON, comparison.txt,
+│   │                        # ablation/ (time of every optimization step)
 │   └── hw/
 │       ├── rtl/nbody_accel.v      # accelerator RTL
 │       ├── tb/                    # testbench + golden-vector generator (from original.py)
@@ -41,7 +63,8 @@ Xeon E5-2630 v3 host). The full analysis is in `nbody/report_nbody.txt` and
 │       ├── run_sim.sh             # generate vectors, compile, simulate
 │       └── sim_result.txt         # last simulation output
 └── raytrace/                # same layout as nbody/, plus
-    └── src/measure_intersection_share.py   # Amdahl fraction for the accelerator
+    ├── src/measure_intersection_share.py   # Amdahl fraction for the accelerator
+    └── hw/rtl/ray_batch_accel.v            # streaming (DMA-style) front end for batches of rays
 ```
 
 ## How to run
@@ -75,6 +98,7 @@ You can also run a single stage: `./nbody/script_nbody.sh <stage>`
 | `profile`  | `perf record -e cpu-clock -F 999 -g` with `python3-dbg` for the original and the optimized code → `perf_report_*.txt`, `flamegraph_*.svg` |
 | `cprofile` | Python-level cProfile for the original and the optimized code → `cprofile_*.txt` |
 | `compare`  | Times both versions with pyperf (release `python3`) → `before.json`, `after.json`, `comparison.txt` |
+| `ablation` | Checks and times every cumulative optimization step in `src/ablation/` → `results/ablation/ablation.txt` |
 | `all`      | All of the stages above, in order (this is the default) |
 
 ### 3. Hardware simulation (Icarus Verilog)
@@ -82,12 +106,22 @@ You can also run a single stage: `./nbody/script_nbody.sh <stage>`
 ```bash
 iverilog -g2012 -o /tmp/tb_fp.vvp common/rtl/*.v common/tb/tb_fp.v && vvp -n /tmp/tb_fp.vvp
 ./nbody/hw/run_sim.sh          # 1000 time steps vs the Python original
-./raytrace/hw/run_sim.sh       # 20x20 primary rays + their shadow rays vs the Python original
+./raytrace/hw/run_sim.sh       # 20x20 primary rays + their shadow rays vs the Python original,
+                               # per-query MMIO and as one streamed batch (with and without stalls)
 ```
 
 Each `run_sim.sh` first runs a Python generator. The generator executes the **original**
 benchmark code and writes golden vectors. The testbench then plays the role of the host
 driver over the MMIO register interface and checks the results.
+
+### 4. Logic synthesis (Yosys)
+
+```bash
+./common/synth/run_synth.sh    # → common/synth/summary.txt
+```
+
+Synthesizes every FP unit and both accelerators for a Xilinx 7-series FPGA (LUT/FF counts)
+and to generic gates (NAND2-equivalent area).
 
 ## Methodology notes
 

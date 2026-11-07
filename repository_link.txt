@@ -1,0 +1,4 @@
+HWSW Project - nbody & raytrace
+
+Git repository: https://github.com/ofirGG/hardsoft
+Clone:          git clone https://github.com/ofirGG/hardsoft.git

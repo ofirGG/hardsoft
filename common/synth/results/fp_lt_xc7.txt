@@ -1,0 +1,19 @@
+
+10. Printing statistics.
+
+=== fp_lt ===
+
+   Number of wires:                375
+   Number of wire bits:            563
+   Number of public wires:           5
+   Number of public wire bits:     131
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:                432
+     LUT2                          126
+     LUT6                          140
+     MUXCY                          63
+     MUXF7                          69
+     MUXF8                          34
+

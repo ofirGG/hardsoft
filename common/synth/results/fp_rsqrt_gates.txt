@@ -1,0 +1,23 @@
+
+12. Printing statistics.
+
+=== fp_rsqrt ===
+
+   Number of wires:              21724
+   Number of wire bits:          22832
+   Number of public wires:          21
+   Number of public wire bits:     874
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              22225
+     $_AND_                       4133
+     $_DFF_P_                      267
+     $_MUX_                        637
+     $_NAND_                     10444
+     $_NOR_                        156
+     $_NOT_                        241
+     $_OR_                         521
+     $_XNOR_                       483
+     $_XOR_                       5343
+

@@ -1,0 +1,23 @@
+
+12. Printing statistics.
+
+=== ray_batch_accel ===
+
+   Number of wires:              75329
+   Number of wire bits:          83410
+   Number of public wires:         164
+   Number of public wire bits:    7989
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              81751
+     $_AND_                      16460
+     $_DFF_P_                     6329
+     $_MUX_                       8148
+     $_NAND_                     34549
+     $_NOR_                        640
+     $_NOT_                        758
+     $_OR_                        3211
+     $_XNOR_                       741
+     $_XOR_                      10915
+

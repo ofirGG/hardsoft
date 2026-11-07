@@ -1,0 +1,26 @@
+
+10. Printing statistics.
+
+=== ray_batch_accel ===
+
+   Number of wires:              21449
+   Number of wire bits:          28518
+   Number of public wires:         117
+   Number of public wire bits:    4569
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              26299
+     FDRE                         1848
+     LUT1                          373
+     LUT2                         3218
+     LUT3                         3301
+     LUT4                         1020
+     LUT5                         1306
+     LUT6                         9130
+     MUXCY                        2583
+     MUXF7                        1712
+     MUXF8                         405
+     RAM32X1D                      321
+     XORCY                        1082
+

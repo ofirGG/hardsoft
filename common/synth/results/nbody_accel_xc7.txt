@@ -1,0 +1,26 @@
+
+10. Printing statistics.
+
+=== nbody_accel ===
+
+   Number of wires:              30675
+   Number of wire bits:          36916
+   Number of public wires:          77
+   Number of public wire bits:    3378
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              35280
+     FDRE                         1311
+     LUT1                          424
+     LUT2                         3826
+     LUT3                         3275
+     LUT4                         1081
+     LUT5                         1256
+     LUT6                        13594
+     MUXCY                        2646
+     MUXF7                        4132
+     MUXF8                        1373
+     RAM32X1D                     1088
+     XORCY                        1274
+

@@ -11,7 +11,7 @@ sudo apt-get update
 sudo apt-get install -y \
     linux-tools-common "linux-tools-$(uname -r)" linux-tools-generic \
     python3 python3-dbg python3-pip python3-venv \
-    git perl iverilog gtkwave
+    git perl iverilog gtkwave yosys
 
 echo "[setup] Installing pyperformance and pyperf..."
 python3 -m pip install --user --upgrade pyperformance pyperf

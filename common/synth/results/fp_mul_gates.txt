@@ -1,0 +1,22 @@
+
+12. Printing statistics.
+
+=== fp_mul ===
+
+   Number of wires:              17870
+   Number of wire bits:          18181
+   Number of public wires:           9
+   Number of public wire bits:     320
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              17925
+     $_AND_                       3380
+     $_MUX_                        124
+     $_NAND_                      8182
+     $_NOR_                         83
+     $_NOT_                         50
+     $_OR_                         214
+     $_XNOR_                       470
+     $_XOR_                       5422
+

@@ -1,0 +1,25 @@
+
+10. Printing statistics.
+
+=== fp_rsqrt ===
+
+   Number of wires:               7363
+   Number of wire bits:           9847
+   Number of public wires:          28
+   Number of public wire bits:    1240
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:               9093
+     FDRE                          267
+     LUT1                          229
+     LUT2                         1272
+     LUT3                         1307
+     LUT4                          530
+     LUT5                          411
+     LUT6                         3283
+     MUXCY                        1190
+     MUXF7                          84
+     MUXF8                          20
+     XORCY                         500
+

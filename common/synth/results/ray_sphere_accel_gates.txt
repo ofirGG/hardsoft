@@ -1,0 +1,23 @@
+
+12. Printing statistics.
+
+=== ray_sphere_accel ===
+
+   Number of wires:              73090
+   Number of wire bits:          81155
+   Number of public wires:         135
+   Number of public wire bits:    6923
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              79903
+     $_AND_                      16576
+     $_DFF_P_                     5671
+     $_MUX_                       7526
+     $_NAND_                     34104
+     $_NOR_                        552
+     $_NOT_                        756
+     $_OR_                        3080
+     $_XNOR_                       693
+     $_XOR_                      10945
+

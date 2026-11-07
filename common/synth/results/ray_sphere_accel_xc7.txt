@@ -1,0 +1,26 @@
+
+10. Printing statistics.
+
+=== ray_sphere_accel ===
+
+   Number of wires:              19430
+   Number of wire bits:          26096
+   Number of public wires:          87
+   Number of public wire bits:    3626
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              24291
+     FDRE                         1575
+     LUT1                          394
+     LUT2                         3713
+     LUT3                         3615
+     LUT4                          955
+     LUT5                         1143
+     LUT6                         7724
+     MUXCY                        2576
+     MUXF7                         903
+     MUXF8                         109
+     RAM32X1D                      512
+     XORCY                        1072
+

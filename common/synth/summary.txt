@@ -1,0 +1,13 @@
+top                   LUT     FF   carry LUTRAM  BRAM     gates   FF bits  kNAND2eq
+fp_add               1495      0    1112      0     0      3392         0       4.7
+fp_mul               6848      0     421      0     0     17925         0      27.1
+fp_lt                 266      0      63      0     0       530         0       0.6
+fp_rsqrt             7032    267    1690      0     0     21958       267      33.2
+nbody_accel         23456   1311    3920   1088     0     77224      4895     133.1
+ray_sphere_accel    17544   1575    3648    512     0     74232      5671     131.5
+ray_batch_accel     18348   1848    3665    321     0     75422      6329     136.5
+
+xc7  : Xilinx 7-series cells, Yosys 0.9 synth_xilinx without DSP48 inference
+       (multipliers in LUTs + carry chains: LUT counts are an upper bound)
+gates: 2-input gates + MUX2 (combinational) and flip-flop bits; kNAND2eq = thousands
+       of NAND2 equivalents (NAND/NOR 1, AND/OR 1.33, XOR/XNOR/MUX 2.33, FF 4.5)

@@ -1,0 +1,23 @@
+
+12. Printing statistics.
+
+=== nbody_accel ===
+
+   Number of wires:              76318
+   Number of wire bits:          82965
+   Number of public wires:         112
+   Number of public wire bits:    5741
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:              82119
+     $_AND_                      17187
+     $_DFF_P_                     4895
+     $_MUX_                       8740
+     $_NAND_                     35185
+     $_NOR_                        466
+     $_NOT_                        715
+     $_OR_                        3061
+     $_XNOR_                      1232
+     $_XOR_                      10638
+

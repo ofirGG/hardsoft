@@ -67,9 +67,17 @@ profile_one() {
         "$PY_DBG" "$SRC/$name.py" --fast -o "$RES/.profile_tmp.json"
     rm -f "$RES/.profile_tmp.json"
     perf report -i "$data" --stdio > "$RES/perf_report_$name.txt" 2>/dev/null
-    perf script -i "$data" \
+    # Ubuntu's python3-dbg is built without frame pointers, so the call stacks
+    # for the flame graph are unwound with DWARF debug info. DWARF samples are
+    # large (16 KB of stack each), hence the lower sampling frequency.
+    local fg_data="$RES/perf_fg_$name.data"
+    perf record -e "$PERF_EVENT" -F 199 --call-graph dwarf,16384 -o "$fg_data" -- \
+        "$PY_DBG" "$SRC/$name.py" --fast -o "$RES/.profile_tmp.json"
+    rm -f "$RES/.profile_tmp.json"
+    perf script --no-inline -i "$fg_data" \
         | "$FLAMEGRAPH/stackcollapse-perf.pl" > "$RES/$name.folded"
-    "$FLAMEGRAPH/flamegraph.pl" --title "$BENCH ($name)" \
+    rm -f "$fg_data"
+    "$FLAMEGRAPH/flamegraph.pl" --minwidth 1 --title "$BENCH ($name)" \
         "$RES/$name.folded" > "$RES/flamegraph_$name.svg"
     log "Wrote results/perf_report_$name.txt and results/flamegraph_$name.svg"
 }

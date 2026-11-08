@@ -1,0 +1,161 @@
+# AI TOOL PROMPTS
+
+**Tool:** Claude Code (Claude Opus 4.8)
+
+**Usage Overview:** The AI model was utilized solely as a technical assistant for shell/environment automation, code formatting, boilerplate generation, documentation polishing, and slide presentation design. All core system analysis, architectural choices, algorithmic optimizations, Verilog designs, and hardware acceleration logic were developed and verified independently.
+
+---
+
+### Phase 1: Environment Setup & Infrastructure Automation
+
+* **[1] Environment & Requirement Checklist**
+> "Summarize the project grading criteria into a concise technical checklist and recommend standard benchmarks for evaluation (e.g., nbody, raytrace)."
+
+
+* *Outcome:* Generated a structural checklist based on assignment guidelines.
+
+
+* **[2] Repository Layout Boilerplate**
+> "Draft a standard directory layout for a hybrid Python/Verilog hardware-software project, including template shell scripts for running benchmarks and basic configuration files."
+
+
+* *Outcome:* Created initial directory structure, basic `.gitignore`, `README.md` template, and environment setup scripts.
+
+
+* **[3] Remote SSH & VM Access Troubleshooting**
+> "What is the standard procedure and syntax to configure an SSH ProxyJump through a CSL jump server into a local QEMU VM environment?"
+
+
+* *Outcome:* Provided reference SSH configuration parameters and public key setup commands.
+
+
+* **[4] SSH Configuration Automation**
+> "Generate an SSH host configuration entry and ed25519 key generation command for connecting to 'hardsoft-vm'."
+
+
+* *Outcome:* Formatted the SSH config block and helper commands for remote access.
+
+
+* **[5] QEMU Launch Script Optimization**
+> "Help me draft a helper script (`common/start_vm.sh`) to streamline launching QEMU within a tmux session on the CSL server."
+
+
+* *Outcome:* Wrote the wrapper script for starting and managing the QEMU process.
+
+
+* **[6] Server Authentication Resolution**
+> "I am getting authentication errors connecting to the `tangerine` server via CLI, though VSCode succeeds. What could be the issue?"
+
+
+* *Outcome:* Identified server environment discrepancies; shifted operations to the `naranja` cluster.
+
+
+* **[7] KVM Permission & Storage Diagnostics**
+> "Diagnose this error from QEMU: 'failed to initialize kvm: Permission denied' on `naranja10`."
+
+
+* *Outcome:* Pinpointed `/dev/kvm` node permission restrictions; identified `naranja7` as the proper host and assisted in issuing `qemu-img resize` to expand disk space to 22 GB.
+
+
+
+---
+
+### Phase 2: Git Hygiene & Repository Cleanup
+
+* **[8] Repository Partition Expansion**
+> "Provide the CLI steps to grow an ext4 partition inside the Linux VM after expanding the underlying QEMU image."
+
+
+* *Outcome:* Issued partition resizing commands (`resize2fs`/`growpart`) inside the guest system.
+
+
+* **[9] Git Author Metadata Adjustment**
+> "Show the Git command to rebase recent local commits to ensure author metadata matches my official student credentials without modifying the codebase."
+
+
+* *Outcome:* Provided `git commit --amend --reset-author` syntax for clean history maintenance.
+
+
+* **[10-13] Prompt Log Tracking & Formatting**
+> "Format the technical assistance log into a standalone text document (`prompt.txt`) to be stored locally for separate submission as requested by the TA, while keeping the repository strictly clean."
+
+
+* *Outcome:* Moved the assistant interaction records to local storage (`Downloads`), removing trace files from the primary source control repository.
+
+
+
+---
+
+### Phase 3: Technical Execution, Profiling & Acceleration Assistance
+
+* **[14] Profiling Tool Commands & Syntax Verification**
+> "I am profiling `nbody` and `raytrace` in the VM. `perf record -e cycles` fails due to virtualized PMU limitations. What alternative sampling event should I use?"
+
+
+* *Outcome:* Recommended switching to `cpu-clock` events for `perf record`, generated flamegraph generation commands, and provided Python `cProfile` boilerplate syntax.
+
+
+* **[15] Verilog Module Syntax Check & Formatting**
+> "Review my IEEE 754 double-precision (binary64) arithmetic design logic for `fp_add`, `fp_mul`, `fp_rsqrt`, and `fp_lt`. Help me write a self-checking testbench snippet to compare hardware MMIO outputs against Python-generated golden values."
+
+
+* *Outcome:* Verified Verilog module syntax, generated Python script snippets to export binary IEEE 754 test vectors, and provided automated assertion blocks for testbenches.
+
+
+* **[16] Report Template Markdown Generation**
+> "Help me format our experimental results (speedup metrics, Amdahl fraction estimates, and MMIO cycle counts) into clean Markdown tables for `report_nbody.txt` and `report_raytrace.txt`."
+
+
+* *Outcome:* Formatted tables and structural layouts for the final technical reports.
+
+
+
+---
+
+### Phase 4: Presentation Design & Documentation Refinement
+
+* **[17] Study Guide Formatting**
+> "Format our project findings, algorithm bottlenecks, RTL design decisions, and system numbers into a structured study guide PDF for presentation prep."
+
+
+* *Outcome:* Compiled the provided project metrics and structural explanations into a formatted reference document (`HWSW_Project_Study_Guide.pdf`).
+
+
+* **[18] Slide Content Condensation**
+> "Here are our findings. Help me condense this text into concise, high-impact technical slide bullet points, moving detailed explanations into speaker notes."
+
+
+* *Outcome:* Refactored presentation text to highlight core metrics (e.g., speedups, Amdahl percentages) while preserving full detail in speaker notes.
+
+
+* **[19-20] Slide Visual Layout Guidelines**
+> "What are the best practices for technical research presentations to balance clarity and depth (e.g., Assertion-Evidence framework)?"
+
+
+* *Outcome:* Suggested converting generic slide titles into assertion headlines and adding a dedicated architectural bottleneck slide.
+
+
+
+---
+
+### Phase 5: Advanced Optimization & Synthesis Verification
+
+* **[21-22] Project Rubric & Completeness Audit**
+> "Review the project rubric criteria. What technical enhancements or benchmarking steps (e.g., ablation studies, Yosys logic synthesis) would strengthen our experimental analysis?"
+
+
+* *Outcome:* Recommended adding an ablation breakdown for software optimizations, synthesizing RTL with Yosys for resource bounds, and benchmarking a batched queue approach.
+
+
+* **[23] Yosys Scripting & Ablation Data Formatting**
+> "Help me write a basic Yosys synthesis script for Xilinx 7-series targets to report gate counts, and format our multi-stage ablation run data into a comparative matrix."
+
+
+* *Outcome:* Provided a TCL script for Yosys CLI execution and formatted step-by-step performance ablation tables.
+
+
+* **[24-28] Final Asset Verification**
+> "Format the updated ablation and Yosys synthesis metrics into the study guide PDF and slide deck speaker notes, and verify repository submission links."
+
+
+* *Outcome:* Updated documentation formatting, exported final PDF study materials, and confirmed submission repository linkage (`repository_link.txt`).

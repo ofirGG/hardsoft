@@ -91,10 +91,20 @@ Why it is slow in CPython
       useful FP arithmetic           ~ 8 % (mul/add/sub/pow)
 
 2.4 Flame graph
-    results/flamegraph_original.svg. One tower under the worker process:
-    _PyEval_EvalFrameDefault (advance) with short side frames for the
-    float/list protocol functions listed above. There is no deep call stack -
-    the time is spread over the per-bytecode overhead of one loop body.
+    results/flamegraph_original.svg. Ubuntu's python3-dbg has no frame
+    pointers, so the flame graph comes from a separate recording with DWARF
+    unwinding (perf record --call-graph dwarf -F 199); its percentages differ
+    slightly from the -F 999 report above.
+    The stacks are about 130 frames tall, but almost all of that height is a
+    fixed chain: interpreter start-up and the pyperf runner, 11 nested
+    Python frames (one _PyEval_EvalFrameDefault each) above advance().
+    86 % of the samples land in that one Python frame, the advance() loop
+    body, and form a single flat plateau on top of the chain. On the plateau,
+    _PyEval_EvalFrameDefault itself has 43 % self time, and next to it are
+    short frames for the number and list protocol (binary_op1,
+    PyFloat_FromDouble, float_mul, list_ass_item, ...). There is no deep
+    Python call tree: the time is the per-bytecode overhead of one loop
+    body.
 
 2.5 Bottlenecks identified
     B1. Element-wise list access to positions/velocities: 6 read-modify-write

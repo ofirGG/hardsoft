@@ -95,7 +95,7 @@ You can also run a single stage: `./nbody/script_nbody.sh <stage>`
 | `baseline` | Official `pyperformance run --bench <name>` → `results/pyperformance_baseline.{json,txt}` |
 | `fetch`    | Copies the original benchmark to `src/original.py`, and seeds `src/optimized.py` the first time |
 | `check`    | Runs `src/check_correctness.py` |
-| `profile`  | `perf record -e cpu-clock -F 999 -g` with `python3-dbg` for the original and the optimized code → `perf_report_*.txt`, `flamegraph_*.svg` |
+| `profile`  | `perf record -e cpu-clock -F 999 -g` with `python3-dbg` for the original and the optimized code → `perf_report_*.txt`; a second recording with `--call-graph dwarf -F 199` (python3-dbg has no frame pointers) → `flamegraph_*.svg` |
 | `cprofile` | Python-level cProfile for the original and the optimized code → `cprofile_*.txt` |
 | `compare`  | Times both versions with pyperf (release `python3`) → `before.json`, `after.json`, `comparison.txt` |
 | `ablation` | Checks and times every cumulative optimization step in `src/ablation/` → `results/ablation/ablation.txt` |

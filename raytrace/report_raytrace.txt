@@ -96,10 +96,22 @@ Algorithm
     the cost is calls, lookups and allocation around it.
 
 2.4 Flame graph
-    results/flamegraph_original.svg: a wide plateau of short towers - each
-    a Python-level method call (frame creation, attribute lookup, object
-    allocation) - rather than one deep hot path. This is the signature of
-    "death by a thousand small calls".
+    results/flamegraph_original.svg. Ubuntu's python3-dbg has no frame
+    pointers, so the flame graph comes from a separate recording with DWARF
+    unwinding (perf record --call-graph dwarf -F 199); its percentages differ
+    slightly from the -F 999 report above.
+    Unlike nbody, the samples do not sit in one Python frame. They are spread
+    over up to 11 levels of nested Python calls below the benchmark's entry
+    frame (69 % of the self time is 4-8 levels deep): the render loop calls
+    the shading code, which calls the intersection tests, which call the
+    Vector methods. Each Python call adds its own band of C call machinery
+    (_PyEval_Vector, call_function, _PyEval_MakeFrameVector, frame_dealloc).
+    Next to it are object construction frames (type_call,
+    _PyObject_MakeTpCall, subtype_dealloc, dict_dealloc). PyNumber_Subtract
+    alone covers 23 % of the graph, because `a - b` on Point and Vector
+    objects dispatches to the Python methods Point.__sub__ and
+    Vector.__sub__. The result is many narrow towers with no single dominant
+    hot path: "death by a thousand small calls".
 
 2.5 Bottlenecks identified
     B1. Method-call overhead of tiny vector methods (dot, __sub__, scale,
@@ -184,6 +196,10 @@ pyperf, release python3, same runner for both files (results/comparison.txt):
     * perf samples for the same work: 75K -> 22K
     * call machinery 10.5 % -> 6.2 %, dict-based attribute lookup
       ~ 10 % -> ~ 3 % (_PyDict_GetItemHint gone thanks to __slots__)
+    * flame graph: the call nesting is shallower (72 % of the self time is
+      now 1-5 levels below the entry frame, against 4-8 before), and
+      PyNumber_Subtract falls from 23 % to 5 % of the graph because the
+      vector subtraction is now inlined arithmetic
     * Sphere.intersectionTime is now the top function (0.174 s self of
       0.507 s under cProfile) - the remaining time is concentrated in the
       ray-vs-scene search kernel.
